@@ -2,7 +2,7 @@ import type { Prescription, Settings, Trial } from '../core/types'
 import type { Procedure, ProcedureContext } from './base'
 import type { ProcedureId } from '../core/types'
 import type { IntegrityTrial, ResponseKind } from '../core/integrity'
-import { FatigueMonitor } from './base'
+import { FatigueMonitor, visibleTimeout } from './base'
 import { CATCH_TRIAL_RATE, IntegrityMonitor, MIN_PLAUSIBLE_LATENCY_MS } from '../core/integrity'
 import { maxDemandPd, prismDioptresToPx } from '../core/geometry'
 import { renderFlatFusion, renderRds } from '../core/anaglyph'
@@ -113,7 +113,7 @@ function waitForResponse(onset: number, signal: AbortSignal): Promise<Response |
     const finish = (r: Response | null): void => {
       window.removeEventListener('keydown', onKey)
       signal.removeEventListener('abort', onAbort)
-      window.clearTimeout(timer)
+      cancelTimer()
       resolve(r)
     }
 
@@ -146,7 +146,9 @@ function waitForResponse(onset: number, signal: AbortSignal): Promise<Response |
     const onAbort = (): void => finish(null)
 
     // No answer at all is honest data, not a failure: record it as "can't see it".
-    const timer = window.setTimeout(
+    // The clock stops while the tab is hidden, so a rep the user never actually saw
+    // cannot manufacture one of these.
+    const cancelTimer = visibleTimeout(
       () => finish({ kind: 'cannotSee', direction: null, latencyMs: RESPONSE_TIMEOUT_MS }),
       RESPONSE_TIMEOUT_MS,
     )

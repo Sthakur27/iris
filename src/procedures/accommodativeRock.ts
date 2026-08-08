@@ -1,7 +1,7 @@
 import type { EyeSide } from '../core/types'
 import type { Procedure, ProcedureContext } from './base'
 import type { IntegrityTrial, ResponseKind } from '../core/integrity'
-import { FatigueMonitor } from './base'
+import { FatigueMonitor, visibleTimeout } from './base'
 import { CATCH_TRIAL_RATE, IntegrityMonitor, MIN_PLAUSIBLE_LATENCY_MS } from '../core/integrity'
 import { drawLandoltC } from '../core/anaglyph'
 import { el } from '../ui/router'
@@ -152,7 +152,7 @@ function waitForResponse(
     const finish = (r: Response | null): void => {
       window.removeEventListener('keydown', onKey)
       signal.removeEventListener('abort', onAbort)
-      window.clearTimeout(timer)
+      cancelTimer()
       resolve(r)
     }
 
@@ -185,7 +185,7 @@ function waitForResponse(
     const onAbort = (): void => finish(null)
 
     // Blur that never clears is honest data, not a failure: record it as "can't read it".
-    const timer = window.setTimeout(
+    const cancelTimer = visibleTimeout(
       () => finish({ kind: 'cannotSee', direction: null, latencyMs: timeoutMs }),
       timeoutMs,
     )

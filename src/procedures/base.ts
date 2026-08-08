@@ -66,6 +66,43 @@ export class FatigueMonitor {
   }
 }
 
+/**
+ * A response deadline that does not count time while the tab is hidden.
+ *
+ * A plain `setTimeout` keeps running when you switch tabs, but `requestAnimationFrame`
+ * does not — so tabbing away mid-rep produces a rep that times out while the stimulus
+ * was never actually on screen, and logs a "can't see it" the user never gave. That is
+ * fabricated data in the one channel the integrity layer depends on being honest.
+ *
+ * Returns a cancel function; call it wherever you would have cleared the timeout.
+ */
+export function visibleTimeout(fn: () => void, ms: number): () => void {
+  let remaining = ms
+  let armedAt = 0
+  let timer = 0
+
+  const arm = (): void => {
+    armedAt = performance.now()
+    timer = window.setTimeout(fn, remaining)
+  }
+  const disarm = (): void => {
+    window.clearTimeout(timer)
+    remaining = Math.max(0, remaining - (performance.now() - armedAt))
+  }
+  const onVisibility = (): void => {
+    if (document.hidden) disarm()
+    else arm()
+  }
+
+  document.addEventListener('visibilitychange', onVisibility)
+  if (!document.hidden) arm()
+
+  return () => {
+    window.clearTimeout(timer)
+    document.removeEventListener('visibilitychange', onVisibility)
+  }
+}
+
 export function emptyResult(procedure: ProcedureId): ProcedureResult {
   return { procedure, startedAt: Date.now(), durationMs: 0, trials: [] }
 }
