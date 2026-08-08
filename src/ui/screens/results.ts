@@ -41,8 +41,8 @@ import '../screens.css'
 
 /* ------------------------------------------------------ calibration stamps */
 
-const STAMP_KEY = 'sidvision.calibration-stamps.v1'
-const SYMPTOM_KEY = 'sidvision.symptoms.v1'
+const STAMP_KEY = 'iris.calibration-stamps.v1'
+const SYMPTOM_KEY = 'iris.symptoms.v1'
 
 interface CalibrationStamp {
   pxPerCm: number
@@ -65,6 +65,17 @@ function loadStamps(): Record<string, CalibrationStamp> {
  * nudge during recalibration silently rescales every historical number and the
  * charts quietly compare two different units.
  */
+/**
+ * Catch trials are currently switched off (`CATCH_TRIAL_RATE` is 0), so this only
+ * mentions them when a session actually contains some — an old session, or a future
+ * one if they are turned back on. Reporting "0 blank catch trials" would describe a
+ * mechanism the user has never encountered.
+ */
+function catchNote(a: ProcedureAnalysis): string {
+  const base = `of ${a.totalTrials} presented. ${a.cannotSee} answered "I can’t see it"`
+  return a.catches > 0 ? `${base}, ${a.catches} were blank catch trials.` : `${base}.`
+}
+
 export function stampSessionCalibration(sessionId: string, cal: Calibration): void {
   const all = loadStamps()
   all[sessionId] = {
@@ -385,7 +396,7 @@ export const resultsScreen: Screen = (root, nav) => {
         statBox(
           `${a.attempted}`,
           'valid trials',
-          `of ${a.totalTrials} presented. Blank catch trials and answers faster than a real response don’t count.`,
+          `of ${a.totalTrials} presented. Answers faster than a real response could arrive don’t count.`,
         ),
       )
     } else {
@@ -401,7 +412,7 @@ export const resultsScreen: Screen = (root, nav) => {
         statBox(
           `${a.attempted}`,
           'valid trials',
-          `of ${a.totalTrials} presented. ${a.cannotSee} answered "I can’t see it", ${a.catches} were blank catch trials.`,
+          catchNote(a),
         ),
       )
     }

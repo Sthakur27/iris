@@ -178,6 +178,11 @@ label {
   display: block;
 }
 
+/*
+ * The HUD used to be #4a5560 on black — about 2.5:1 contrast, well under the 4.5:1
+ * floor for body text, and the app asks you to dim the room, which makes it worse.
+ * It was reported as simply not being there. Quiet is right; invisible is not.
+ */
 .stage-hud {
   position: fixed;
   top: 0;
@@ -185,21 +190,32 @@ label {
   right: 0;
   display: flex;
   justify-content: space-between;
-  padding: 12px 18px;
-  font-size: 13px;
-  color: #4a5560;
+  align-items: baseline;
+  gap: 16px;
+  padding: 14px 20px;
+  font-size: 14px;
+  color: var(--text-dim);
   font-family: var(--mono);
   pointer-events: none;
 }
 
+/* The countdown is the one thing people look for, so it gets to be legible. */
+.stage-hud > :last-child {
+  color: var(--text);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sits above the control bar rather than running underneath it. */
 .stage-prompt {
   position: fixed;
-  bottom: 28px;
+  bottom: 64px;
   left: 0;
   right: 0;
+  padding: 0 20px;
   text-align: center;
   font-size: 14px;
-  color: #5b6673;
+  color: var(--text-dim);
 }
 
 /* Rest interval: deliberately low-stimulus. */

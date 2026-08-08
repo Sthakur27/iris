@@ -1,4 +1,4 @@
-# SidVision — Clinical and Motor-Learning Research Base
+# Iris — Clinical and Motor-Learning Research Base
 
 **Purpose.** This is the project's durable research memory: what the peer-reviewed evidence
 actually says about computerised home vision therapy, written for an engineer with no optometry
@@ -112,7 +112,7 @@ target), the therapist says the participant is *looking too far or too close in 
 *change where they are pointing their eyes*.
 
 **Product opportunity.** This is pure copywriting and costs nothing. HTS's instructional text is
-mechanical ("press the arrow key where the square pops out"). Every SidVision prompt should be
+mechanical ("press the arrow key where the square pops out"). Every Iris prompt should be
 phrased as an internal action ("pull your eyes in", "get the feeling of looking far away"), never as
 a property of the screen.
 
@@ -149,7 +149,7 @@ the task easier.* Its ordered ladder for a stuck convergence:
 For divergence there is an equivalent ladder ending in plus lenses / base-out prism.
 
 **Product opportunity.** HTS's staircase does step 5 immediately and silently on every error. A
-failure in SidVision should trigger a *rescue sequence* — cue, then re-attempt, then re-attempt with
+failure in Iris should trigger a *rescue sequence* — cue, then re-attempt, then re-attempt with
 a hint, and only then a demand reduction. This is the single most mechanically copyable difference
 between the two modalities.
 
@@ -324,7 +324,7 @@ What we have is **[EXTRAP]**:
   training a degraded system for its back half.
 
 **Honest bottom line:** two shorter daily sessions are *plausibly* better and are *definitely* not
-known to be better. This is a good candidate for SidVision's own A/B test, since the product can
+known to be better. This is a good candidate for Iris's own A/B test, since the product can
 randomise it and measure within-session velocity proxies.
 
 ### 2.4 Blocked vs interleaved order
@@ -383,7 +383,7 @@ adjacent field and largely failed.**
 | Physiotherapy home exercise programmes | as low as ~50%; one pooled review reported 21% | [Physiopedia review](https://www.physio-pedia.com/Adherence_to_Home_Exercise_Programs); [chronic-disease meta-analysis, PMC10080001](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10080001/) |
 
 **The 24–30% figure from CINAPS is the number to design against.** It is electronically logged (not
-self-reported), from adults, on exactly the modality SidVision is building — 10 minutes, 3×/week —
+self-reported), from adults, on exactly the modality Iris is building — 10 minutes, 3×/week —
 and it is catastrophic. CITT's 67.3% was *therapist-rated from interviews and logs*, i.e. almost
 certainly inflated relative to what the software would have recorded.
 
@@ -411,7 +411,7 @@ outcome and most secondary risk factors
 One review warns explicitly of "artificial inflation on patient-reported outcomes potentially
 attributable to activation of the body's innate reward circuit" — i.e. gamification can make your
 *symptom questionnaire* improve without your *eyes* improving. Given §1.1's finding that CISS is
-already placebo-sensitive, this is a live risk for SidVision specifically.
+already placebo-sensitive, this is a live risk for Iris specifically.
 
 **Design conclusion.** Engagement is necessary (24% adherence produces nothing) but not sufficient,
 and it can actively corrupt your outcome measurement. Build engagement to buy *dose*, and measure
@@ -663,7 +663,7 @@ therapy improving peak velocity and response amplitude
 eye fields, posterior parietal cortex and cerebellar vermis activity correlate with symmetrical
 vergence peak velocity and increase with training.
 
-**Design implication:** the metric SidVision should trend most prominently is **time-to-fuse on a
+**Design implication:** the metric Iris should trend most prominently is **time-to-fuse on a
 step demand at a fixed sub-threshold level** — a fixed "probe block" of, say, 10 steps at 8Δ BO run
 at the start of every session. That is a browser-measurable quantity that plausibly tracks the
 subsystem therapy actually changes, and holding the demand fixed makes it comparable across
@@ -761,7 +761,7 @@ waiting rarely resolved it
 ### 7.8 Lens sorting — **only with a lens set, but conceptually important**
 Patient sorts 6–8 unmarked lenses by strength purely by how they *feel*. It trains nothing
 mechanical; it trains *interoception of accommodative effort*, which is the qualitative endpoint
-criterion running through the whole manual (§5.3). If SidVision ships flipper lenses anyway, a
+criterion running through the whole manual (§5.3). If Iris ships flipper lenses anyway, a
 "which lens is stronger?" discrimination game is a cheap analogue.
 
 ### 7.9 Dichoptic contrast-balanced training from the amblyopia literature — **implementable, but weak evidence**
@@ -839,7 +839,7 @@ disclaimer that the product "does not treat or diagnose any specific medical con
 
 ---
 
-## Design implications for SidVision
+## Design implications for Iris
 
 Each item traces to a numbered finding above.
 
@@ -948,7 +948,7 @@ Each item traces to a numbered finding above.
     intractable diplopia. HTS's product page discloses none of this. *(§8.2, §8.3)*
 
 23. **Be explicit in-product that office-based therapy outperformed home computer therapy in the
-    definitive trial** and is first-line. Honest positioning: SidVision is for people who cannot or
+    definitive trial** and is first-line. Honest positioning: Iris is for people who cannot or
     will not access office therapy, and for maintenance — not a claimed equal. *(§1.1, §8.3)*
 
 24. **Claim only convergence insufficiency (and accommodative facility).** No reading, attention,

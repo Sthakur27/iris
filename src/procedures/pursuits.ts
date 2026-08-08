@@ -1,7 +1,7 @@
 import type { Calibration } from '../core/types'
 import type { Procedure, ProcedureContext } from './base'
 import type { IntegrityTrial, ResponseKind } from '../core/integrity'
-import { FatigueMonitor, visibleTimeout } from './base'
+import { FatigueMonitor, createElapsedClock, visibleTimeout } from './base'
 import { CATCH_TRIAL_RATE, IntegrityMonitor, MIN_PLAUSIBLE_LATENCY_MS } from '../core/integrity'
 import { drawLandoltC } from '../core/anaglyph'
 import { el } from '../ui/router'
@@ -306,7 +306,17 @@ async function runPursuits(ctx: ProcedureContext): Promise<void> {
   const recorded: PursuitTrial[] = []
   let position = { x: path.cx, y: path.cy }
 
+  /**
+   * Phase reference for the animated path. This one is a raw wall clock on purpose:
+   * it drives where the target *is*, and a paused clock would only mean the target
+   * resumes from where it stopped — which is what we want, but is already what
+   * happens, since the render loop is a `requestAnimationFrame` that does not run
+   * while the tab is hidden. The user-facing elapsed counter is separate, below.
+   */
   const startedAt = performance.now()
+
+  /** Therapy actually done: stops for hidden tabs and for pauses, like the session clock. */
+  const elapsed = createElapsedClock()
 
   const onResize = (): void => {
     const { w, h } = viewport()
@@ -404,10 +414,7 @@ async function runPursuits(ctx: ProcedureContext): Promise<void> {
   const clock = window.setInterval(() => paintClock(), 500)
 
   function paintClock(): void {
-    const s = Math.floor((performance.now() - startedAt) / 1000)
-    const mm = String(Math.floor(s / 60)).padStart(2, '0')
-    const ss = String(s % 60).padStart(2, '0')
-    hudClock.textContent = `${mm}:${ss} elapsed`
+    hudClock.textContent = `${elapsed.format()} elapsed`
   }
 
   function paintHud(): void {
@@ -430,6 +437,9 @@ async function runPursuits(ctx: ProcedureContext): Promise<void> {
       // --- Build the stimulus --------------------------------------------
       // A catch epoch's gap is below resolution however well the target is tracked,
       // so an arrow key here is a false alarm rather than a tracking failure.
+      // CATCH_TRIAL_RATE is currently 0, so `isCatch` is always false and every branch
+      // below that depends on it — including the "that gap was too small to read" copy —
+      // is dormant rather than dead. Restoring catch trials is a change to that rate.
       const isCatch = Math.random() < CATCH_TRIAL_RATE
       const direction = DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)] ?? 'up'
 
@@ -528,6 +538,7 @@ async function runPursuits(ctx: ProcedureContext): Promise<void> {
   } finally {
     cancelAnimationFrame(raf)
     window.clearInterval(clock)
+    elapsed.dispose()
     window.removeEventListener('resize', onResize)
     feedback.close()
     stage.remove()

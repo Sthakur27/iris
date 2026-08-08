@@ -41,10 +41,25 @@ export interface FlipperLevel {
   leftEyeD: number
 }
 
+/** Which units to show lengths in. Stored so it is asked once, not every time. */
+export type LengthUnit = 'cm' | 'in'
+
 export interface Settings {
   calibration: Calibration
+  /** The user's preferred units for distances and screen sizes. */
+  preferredUnit: LengthUnit
+  /**
+   * Advanced mode: manual control over things the programme normally decides.
+   *
+   * Unlocks every exercise regardless of progression gates, and exposes direct
+   * demand controls instead of leaving the adaptive staircase to find your level.
+   * Both are useful for testing and both undermine the data — a hand-set demand is
+   * not evidence of an adaptively-found threshold — so this is never turned on for
+   * you, and trials recorded under it are marked.
+   */
+  advancedMode: boolean
   prescription: Prescription
-  /** Insert an explicit look-away reset between reps (SidVision addition, not in HTS). */
+  /** Insert an explicit look-away reset between reps (Iris addition, not in HTS). */
   restBetweenRepsMs: number
 }
 
@@ -58,6 +73,41 @@ export interface Trial {
   correct: boolean
   /** Milliseconds from stimulus onset to the keypress that resolved it. */
   latencyMs: number
+
+  /*
+   * Everything below is optional and procedure-specific. It is declared here rather
+   * than smuggled through `onTrial` as undeclared extras, because the results screen
+   * already reads several of these — an undeclared channel typechecks right up until
+   * someone renames a field and the analysis silently starts reporting nothing.
+   */
+
+  /** True when this trial deliberately had no resolvable target. */
+  isCatch?: boolean
+  /** How the user answered: a direction, or an honest "I can't see it". */
+  kind?: 'answer' | 'cannotSee'
+
+  /**
+   * Accommodative Rock. The first target after each colour change is the one that
+   * measures accommodative clearing time — how long that eye took to refocus through
+   * the new lens. Later targets in the same row are just reading speed.
+   */
+  isClearing?: boolean
+  rowIndex?: number
+  /** Dioptric power in front of the stimulated eye for this trial. */
+  flipperD?: number
+
+  /** Saccades: how far the target jumped from the previous one. */
+  jumpPx?: number
+  jumpDeg?: number
+  /** How far from centre the target sat, in degrees of visual angle. */
+  eccentricityDeg?: number
+
+  /**
+   * The demand was set by hand in advanced mode rather than found by the staircase.
+   * Such trials must never count toward "highest demand sustained" — the whole point
+   * of that metric is that the level was earned, not chosen.
+   */
+  manualDemand?: boolean
 }
 
 export interface ProcedureResult {
@@ -71,4 +121,8 @@ export interface SessionRecord {
   id: string
   startedAt: number
   results: ProcedureResult[]
+  /** The user ended the session before the plan finished. */
+  endedEarly?: boolean
+  /** How many rests the user cut short. Recorded, not judged. */
+  restsSkipped?: number
 }

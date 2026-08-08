@@ -2,9 +2,9 @@ import type { Prescription, Settings, Trial } from '../core/types'
 import type { Procedure, ProcedureContext } from './base'
 import type { ProcedureId } from '../core/types'
 import type { IntegrityTrial, ResponseKind } from '../core/integrity'
-import { FatigueMonitor, visibleTimeout } from './base'
+import { FatigueMonitor, createElapsedClock, visibleTimeout } from './base'
 import { CATCH_TRIAL_RATE, IntegrityMonitor, MIN_PLAUSIBLE_LATENCY_MS } from '../core/integrity'
-import { maxDemandPd, prismDioptresToPx } from '../core/geometry'
+import { planStereoField, prismDioptresToPx } from '../core/geometry'
 import { renderFlatFusion, renderRds } from '../core/anaglyph'
 import { el } from '../ui/router'
 
@@ -65,6 +65,12 @@ const FLAT_FALLBACK_AFTER = 5
 const DOT_PX = 3
 const DOT_DENSITY = 0.5
 
+/** Breathing room kept between the widest eye view and the edge of the window. */
+const STAGE_GUTTER_PX = 24
+
+/** Smallest field worth drawing on either axis — below this the dots stop being a field. */
+const MIN_FIELD_PX = 160
+
 interface Response {
   kind: ResponseKind
   direction: Direction | null
@@ -119,6 +125,10 @@ function waitForResponse(onset: number, signal: AbortSignal): Promise<Response |
 
     const onKey = (e: KeyboardEvent): void => {
       if (e.repeat) return
+      // Keystrokes aimed at a control on the stage — the advanced-mode demand slider —
+      // are not answers. Without this, nudging the slider with the arrow keys would
+      // also log a direction response the user never intended to give.
+      if (e.target instanceof HTMLInputElement) return
       const latencyMs = performance.now() - onset
 
       if (e.key === ' ' || e.code === 'Space') {
@@ -247,6 +257,126 @@ class Feedback {
   }
 }
 
+/**
+ * Advanced-mode control that sets the demand magnitude by hand.
+ *
+ * Only the three disparity-vergence procedures get one, because only they have a
+ * demand that is a continuous physical quantity — prism dioptres, bounded above by
+ * what this screen and viewing distance can honestly display. It is deliberately
+ * quiet chrome in the corner of the stage: available, never the point.
+ *
+ * Two rules make it safe to expose at all:
+ *
+ *  1. **Moving it suspends the staircase for the rest of the run**, not just for the
+ *     next rep. A ladder that resumed from a hand-set level would carry that level
+ *     forward as its own starting point and then report a threshold it never actually
+ *     found — the contamination would outlive the reps that are marked. A one-rep
+ *     suspension is also incoherent from the user's side: the ladder would drag the
+ *     demand off whatever they set, so they would keep re-setting it and the run would
+ *     end up an uninterpretable mixture. Taking the wheel is therefore a decision for
+ *     the exercise, and the copy below says so before the first move and after it.
+ *  2. **Every trial from that point carries `manualDemand`**, and none of them feed
+ *     the "highest demand held" figure. A demand you chose is not evidence you can
+ *     hold it.
+ *
+ * There is no way back to automatic within a run, on purpose: "hand back the wheel"
+ * would just be the ambiguous mixture again. Restarting the exercise is the way back.
+ */
+interface ManualDemand {
+  node: HTMLElement
+  /** True once the user has moved the slider. Never returns to false. */
+  engaged(): boolean
+  magnitudePd(): number
+  /** Re-bound to a new screen ceiling after a resize, clamping the current value. */
+  setCeiling(ceilingPd: number): void
+  /** Track the staircase while it is still in charge, so the slider reads true. */
+  followLadder(magnitudePd: number): void
+}
+
+function clamp(value: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, value))
+}
+
+function createManualDemand(opts: {
+  floorPd: number
+  ceilingPd: number
+  startPd: number
+}): ManualDemand {
+  let engaged = false
+  // A slider whose ends meet cannot be moved, so the ceiling is never the floor.
+  let ceilingPd = Math.max(opts.floorPd + STEP_UP_PD, opts.ceilingPd)
+  let magnitudePd = clamp(opts.startPd, opts.floorPd, ceilingPd)
+
+  const node = el('div')
+  node.style.cssText =
+    'position:fixed;left:16px;bottom:14px;width:212px;padding:10px 12px;' +
+    'border:1px solid var(--border);border-radius:8px;background:var(--bg-raised);' +
+    'font-size:12px;color:var(--text-dim);z-index:20'
+
+  const header = el('div')
+  header.style.cssText =
+    'display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);margin-bottom:6px'
+  const value = el('span')
+  value.style.color = 'var(--text)'
+  header.append(el('span', {}, 'manual demand'), value)
+
+  const slider = el('input', {
+    type: 'range',
+    min: String(opts.floorPd),
+    max: String(ceilingPd),
+    // Matches the 0.5Δ buckets the run scores levels in, so the slider cannot land
+    // between two of them.
+    step: '0.5',
+    value: String(magnitudePd),
+  })
+  slider.style.cssText = 'width:100%;margin:0;display:block'
+
+  const note = el('div')
+  note.style.cssText = 'margin-top:6px;line-height:1.45'
+
+  node.append(header, slider, note)
+
+  function paint(): void {
+    value.textContent = `${magnitudePd.toFixed(1)}Δ`
+    note.textContent = engaged
+      ? 'Hand-set. The adaptive ladder is off for the rest of this exercise, and these reps are marked — they do not count toward the demand you held.'
+      : `Advanced mode. Drag to set the demand yourself, up to this screen’s ${ceilingPd.toFixed(1)}Δ ceiling. Doing so stops the adaptive ladder for the rest of this exercise.`
+  }
+
+  slider.addEventListener('input', () => {
+    const next = Number(slider.value)
+    if (!Number.isFinite(next)) return
+    magnitudePd = clamp(next, opts.floorPd, ceilingPd)
+    engaged = true
+    paint()
+  })
+
+  // The arrow keys are the answer channel. A slider that kept focus after being
+  // dragged would quietly eat every answer that followed, so it lets go on commit.
+  slider.addEventListener('change', () => slider.blur())
+
+  paint()
+
+  return {
+    node,
+    engaged: () => engaged,
+    magnitudePd: () => magnitudePd,
+    setCeiling(next) {
+      ceilingPd = Math.max(opts.floorPd + STEP_UP_PD, next)
+      magnitudePd = clamp(magnitudePd, opts.floorPd, ceilingPd)
+      slider.max = String(ceilingPd)
+      slider.value = String(magnitudePd)
+      paint()
+    },
+    followLadder(next) {
+      if (engaged) return
+      magnitudePd = clamp(next, opts.floorPd, ceilingPd)
+      slider.value = String(magnitudePd)
+      paint()
+    },
+  }
+}
+
 export function createVergenceProcedure(spec: VergenceSpec): Procedure {
   return {
     id: spec.id,
@@ -292,20 +422,26 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
   const fatigue = new FatigueMonitor()
 
   // --- Geometry ------------------------------------------------------------
-  let fieldPx = fieldSize()
+  // The field is sized once, for the top of this procedure's ladder, so that the two
+  // eye views keep a dominant common region at every demand the ladder can reach.
   let popPx = popDisparityPx(cal)
-  let ceilingPd = screenCeilingPd(fieldPx, popPx, cal)
+  let field = planField(goalPd, popPx, cal)
 
   const onResize = (): void => {
-    fieldPx = fieldSize()
     popPx = popDisparityPx(cal)
-    ceilingPd = screenCeilingPd(fieldPx, popPx, cal)
-    magnitude = Math.min(magnitude, reachableGoal())
+    field = planField(goalPd, popPx, cal)
+    manual?.setCeiling(field.ceilingPd)
+    // A hand-set demand answers only to the screen ceiling; the ladder also answers
+    // to the prescribed goal.
+    magnitude = Math.min(
+      magnitude,
+      manual?.engaged() === true ? Math.max(FLOOR_PD, field.ceilingPd) : reachableGoal(),
+    )
     paintHud()
   }
   window.addEventListener('resize', onResize)
 
-  const reachableGoal = (): number => Math.max(FLOOR_PD, Math.min(goalPd, ceilingPd))
+  const reachableGoal = (): number => Math.max(FLOOR_PD, Math.min(goalPd, field.ceilingPd))
 
   // --- Adaptive state ------------------------------------------------------
   // Start low deliberately: the ladder should climb on evidence, not drop the user
@@ -316,6 +452,19 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
   let mode: 'rds' | 'flat' = 'rds'
   let currentSignedPd = 0
 
+  // Present only in advanced mode. Off by default, and never turned on for the user.
+  const manual: ManualDemand | null = settings.advancedMode
+    ? createManualDemand({
+        floorPd: FLOOR_PD,
+        ceilingPd: field.ceilingPd,
+        startPd: magnitude,
+      })
+    : null
+  if (manual) stage.append(manual.node)
+
+  /** Did any rep in this run run on a hand-set demand? Only affects the summary. */
+  let everManual = false
+
   /**
    * The real outcome measure: the highest demand the user actually held with
    * trustworthy responses. A raw peak demand is meaningless if it was reached by
@@ -324,23 +473,23 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
    */
   const levelStats = new Map<number, { valid: number; correct: number }>()
 
-  const startedAt = performance.now()
+  const elapsed = createElapsedClock()
   const clock = window.setInterval(() => paintClock(), 500)
 
   function paintClock(): void {
-    const s = Math.floor((performance.now() - startedAt) / 1000)
-    const mm = String(Math.floor(s / 60)).padStart(2, '0')
-    const ss = String(s % 60).padStart(2, '0')
-    hudClock.textContent = `${mm}:${ss} elapsed`
+    hudClock.textContent = `${elapsed.format()} elapsed`
   }
 
   function paintHud(): void {
     const sense = currentSignedPd >= 0 ? 'crossed' : 'uncrossed'
-    hudDemand.textContent = `${Math.abs(currentSignedPd).toFixed(1)}Δ ${sense}`
+    // Say it in the HUD too, not only next to the slider: what the demand is and
+    // where it came from are the same fact.
+    const source = manual?.engaged() === true ? ' · hand-set' : ''
+    hudDemand.textContent = `${Math.abs(currentSignedPd).toFixed(1)}Δ ${sense}${source}`
     // HTS lets you fail forever at a demand your screen physically cannot display.
     hudWarning.textContent =
-      ceilingPd < goalPd
-        ? `screen ceiling ${ceilingPd.toFixed(1)}Δ — below the ${goalPd.toFixed(0)}Δ goal; sit closer or use a wider display`
+      field.ceilingPd < goalPd
+        ? `screen ceiling ${field.ceilingPd.toFixed(1)}Δ — below the ${goalPd.toFixed(0)}Δ goal; sit closer or use a wider display`
         : ''
   }
 
@@ -377,20 +526,33 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       // Catch trials contain no fusible target at all. They are the only way to tell
       // a user who is fusing from a user who is producing plausible-looking keypresses:
       // a guesser answers a direction here, an honest observer presses space.
+      // CATCH_TRIAL_RATE is currently 0, so `isCatch` is always false and every branch
+      // below that depends on it is dormant rather than dead. The code stays so that
+      // restoring catch trials is a one-line change to that rate.
       const isCatch = Math.random() < CATCH_TRIAL_RATE
       const dirIndex = Math.floor(Math.random() * DIRECTIONS.length)
       const direction = DIRECTIONS[dirIndex] ?? 'up'
 
+      // Where this rep's magnitude comes from. Once the slider has been touched it is
+      // the only source for the rest of the run; until then it mirrors the ladder.
+      if (manual) {
+        if (manual.engaged()) magnitude = Math.min(manual.magnitudePd(), field.ceilingPd)
+        else manual.followLadder(magnitude)
+      }
+      const handSet = manual?.engaged() === true
+      if (handSet) everManual = true
+
       const requested = spec.signedDemandPd(rep, magnitude, settings.prescription)
       const signedPd =
-        Math.sign(requested) * Math.min(Math.abs(requested), ceilingPd)
+        Math.sign(requested) * Math.min(Math.abs(requested), field.ceilingPd)
       currentSignedPd = signedPd
       paintHud()
 
       const disparityPx = prismDioptresToPx(signedPd, cal)
       if (mode === 'rds') {
         paintRds(canvas, {
-          fieldPx,
+          fieldW: field.widthPx,
+          fieldH: field.heightPx,
           disparityPx,
           popPx,
           redEye: cal.redEye,
@@ -398,7 +560,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
         })
       } else {
         paintFlat(canvas, {
-          fieldPx,
+          fieldPx: field.heightPx,
           disparityPx,
           redEye: cal.redEye,
           oddPosition: dirIndex as 0 | 1 | 2 | 3,
@@ -436,6 +598,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
         latencyMs: Math.round(response.latencyMs),
         isCatch,
         kind: response.kind,
+        ...(handSet ? { manualDemand: true } : {}),
       }
       monitor.push(trial)
       fatigue.push(trial)
@@ -444,9 +607,12 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
         demand: trial.demand,
         correct: trial.correct,
         latencyMs: trial.latencyMs,
+        ...(handSet ? { manualDemand: true } : {}),
       })
 
-      if (!isCatch && response.kind === 'answer' && !anticipated) {
+      // Hand-set reps are recorded but never scored as a level held: the metric they
+      // would feed exists to say the staircase found the demand, which it did not.
+      if (!handSet && !isCatch && response.kind === 'answer' && !anticipated) {
         const key = Math.round(Math.abs(signedPd) * 2) / 2
         const bucket = levelStats.get(key) ?? { valid: 0, correct: 0 }
         bucket.valid += 1
@@ -491,13 +657,20 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       // --- Adaptive demand -------------------------------------------------
       // Driven by the integrity monitor rather than a star/streak gate: accuracy alone
       // floors at 25% chance in a 4AFC task, so it cannot distinguish fusing from guessing.
-      const recommendation = monitor.recommendation()
-      if (response.kind === 'cannotSee' && !isCatch) {
-        magnitude = Math.max(FLOOR_PD, magnitude - STEP_DOWN_PD)
-      } else if (recommendation === 'increase' && !monitor.verdict().atChance) {
-        magnitude = Math.min(reachableGoal(), magnitude + STEP_UP_PD)
-      } else if (recommendation === 'decrease') {
-        magnitude = Math.max(FLOOR_PD, magnitude - STEP_DOWN_PD)
+      //
+      // Skipped entirely once the demand is hand-set. The ladder must not go on moving
+      // underneath a demand the user is holding fixed — it would either fight the slider
+      // or, worse, carry the hand-set level forward as its own and report it later as a
+      // level it found.
+      if (!handSet) {
+        const recommendation = monitor.recommendation()
+        if (response.kind === 'cannotSee' && !isCatch) {
+          magnitude = Math.max(FLOOR_PD, magnitude - STEP_DOWN_PD)
+        } else if (recommendation === 'increase' && !monitor.verdict().atChance) {
+          magnitude = Math.min(reachableGoal(), magnitude + STEP_UP_PD)
+        } else if (recommendation === 'decrease') {
+          magnitude = Math.max(FLOOR_PD, magnitude - STEP_DOWN_PD)
+        }
       }
 
       rep += 1
@@ -516,6 +689,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     await showSummary()
   } finally {
     window.clearInterval(clock)
+    elapsed.dispose()
     window.removeEventListener('resize', onResize)
     feedback.close()
     stage.remove()
@@ -538,24 +712,77 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     restDot.style.display = 'none'
     hudDemand.textContent = ''
     hudWarning.textContent = ''
+    if (manual) manual.node.style.display = 'none'
 
     promptMain.textContent =
       sustained > 0
         ? `Highest demand you held with trustworthy responses: ${sustained.toFixed(1)}Δ`
         : 'No demand level had enough trustworthy responses to score. That is a result, not a failure.'
-    promptNote.textContent = verdict.trustworthy
-      ? ''
-      : verdict.notes.join(' ')
-    await linger(2200)
+
+    const notes = verdict.trustworthy ? [] : [...verdict.notes]
+    if (everManual) {
+      notes.push(
+        'You set the demand by hand for part of this run. Those reps are recorded and marked, but excluded from the figure above — it only means anything when the ladder found the level.',
+      )
+    }
+    promptNote.textContent = notes.join(' ')
+    await linger(everManual ? 3200 : 2200)
   }
 }
 
 // --- Rendering helpers -----------------------------------------------------
 
-function fieldSize(): number {
-  const byWidth = Math.round(window.innerWidth * 0.28)
-  const byHeight = Math.round(window.innerHeight * 0.5)
-  return Math.max(160, Math.min(340, Math.min(byWidth, byHeight)))
+interface FieldPlan {
+  widthPx: number
+  heightPx: number
+  /** Highest demand this field can present, in Δ. */
+  ceilingPd: number
+}
+
+/** Vertical room the field may use, after the HUD and the prompt take their bands. */
+function usableHeightPx(): number {
+  return Math.max(120, Math.round(window.innerHeight * 0.62))
+}
+
+/**
+ * Width, unlike height, is a stereo constraint rather than a taste decision.
+ *
+ * The whole field is drawn twice, shifted by ±disparity/2, so a field that is merely
+ * "a nice size" pulls apart into two barely-overlapping halves as the demand climbs —
+ * mostly monocular, which drives rivalry instead of fusion. `planStereoField` sizes it
+ * against the peak disparity instead and reports what that leaves reachable.
+ *
+ * Height is then free to follow, because disparity is purely horizontal and height has
+ * no bearing on how much of the two eye views overlap. So it simply tracks the width:
+ * a square field is the neutral shape, and it is roughly the shape of a real vectogram
+ * target. Pinning it to a fixed cap instead — which is what it used to do — made the
+ * aspect ratio run away with the goal, since only the width grew: a 35Δ goal on a
+ * 1440px viewport produced a 3.2:1 letterbox.
+ *
+ * Where a square does not fit vertically, the field letterboxes rather than giving
+ * width back. Width is load-bearing and height is not, so a short wide field is a
+ * cosmetic compromise while a narrow one is a broken stimulus.
+ */
+function planField(
+  goalPd: number,
+  popPx: number,
+  cal: Settings['calibration'],
+): FieldPlan {
+  const plan = planStereoField({
+    usableWidthPx: Math.max(0, window.innerWidth - 2 * STAGE_GUTTER_PX),
+    // Never narrower than the shortest field we would draw, however shallow the goal.
+    minFieldWidthPx: MIN_FIELD_PX,
+    // Everything renderRds adds to the canvas apart from the base disparity itself:
+    // the target's excursion, a dot of slack each side, and a pixel of rounding.
+    extraPx: popPx + 2 * DOT_PX + 2,
+    goalPd,
+    cal,
+  })
+  const heightPx = Math.max(
+    MIN_FIELD_PX,
+    Math.min(plan.fieldWidthPx, usableHeightPx()),
+  )
+  return { widthPx: plan.fieldWidthPx, heightPx, ceilingPd: plan.ceilingPd }
 }
 
 /**
@@ -567,43 +794,37 @@ function popDisparityPx(cal: Settings['calibration']): number {
   return Math.max(6, Math.min(20, Math.round(prismDioptresToPx(0.5, cal))))
 }
 
-function screenCeilingPd(
-  fieldPx: number,
-  popPx: number,
-  cal: Settings['calibration'],
-): number {
-  // renderRds widens the canvas by the base disparity plus the target's excursion and
-  // a dot of slack, so the field width fed to maxDemandPd has to include those.
-  const effectiveField = fieldPx + 2 * popPx + 4 * DOT_PX
-  return Math.max(0, maxDemandPd(window.innerWidth, effectiveField, cal))
-}
-
 function paintRds(
   canvas: HTMLCanvasElement,
   opts: {
-    fieldPx: number
+    fieldW: number
+    fieldH: number
     disparityPx: number
     popPx: number
     redEye: Settings['calibration']['redEye']
     target: Direction | null
   },
 ): void {
-  const { fieldPx } = opts
-  const offset = fieldPx * 0.26
-  const sizePx = Math.max(24, Math.round(fieldPx * 0.18))
-  const c = fieldPx / 2
+  const { fieldW, fieldH } = opts
+  // The four positions are scaled by the field's height and clustered around its
+  // centre. The field is far wider than it is tall, so a target laid out against the
+  // width would drift out towards the wings, where only one eye has field content.
+  const offset = fieldH * 0.26
+  const sizePx = Math.max(24, Math.round(fieldH * 0.18))
+  const cx = fieldW / 2
+  const cy = fieldH / 2
 
   const centres: Record<Direction, { cx: number; cy: number }> = {
-    up: { cx: c, cy: c - offset },
-    down: { cx: c, cy: c + offset },
-    left: { cx: c - offset, cy: c },
-    right: { cx: c + offset, cy: c },
+    up: { cx, cy: cy - offset },
+    down: { cx, cy: cy + offset },
+    left: { cx: cx - offset, cy },
+    right: { cx: cx + offset, cy },
   }
   const centre = opts.target ? centres[opts.target] : null
 
   renderRds(canvas, {
-    fieldW: fieldPx,
-    fieldH: fieldPx,
+    fieldW,
+    fieldH,
     dotPx: DOT_PX,
     density: DOT_DENSITY,
     baseDisparityPx: opts.disparityPx,

@@ -1,4 +1,4 @@
-# SidVision
+# Iris
 
 A local, unlimited-use home vision therapy app for convergence and accommodative work. Rebuilds
 what HTS2 does and then fixes what it gets wrong.
@@ -27,15 +27,15 @@ records the rendering environment at calibration time and blocks a session if it
 
 ## What it does differently from HTS
 
-| | HTS2 | SidVision |
+| | HTS2 | Iris |
 |---|---|---|
 | Scoring | Percent correct, cycles/min | Highest demand sustained with *trustworthy* responses |
 | Guessing | Guarded only by an 80% pass mark | Catch trials, accuracy tested against chance, sub-250 ms responses rejected, a free "I can't see it" key |
 | Suppression | Not detected | Monocular probes, alternating eyes, flagged when one eye stops reporting |
 | Progression | Fixed level ladders with star gates | Adaptive, driven by whether responses are trustworthy at the current demand |
-| Rest | None between reps | Enforced look-away resets; rests cannot be skipped |
+| Rest | None between reps | Enforced look-away resets, skippable but recorded as skipped |
 | Screen limits | Silent | Computes and warns when the prescribed goal exceeds what your screen and viewing distance can display |
-| Clock | Runs regardless | Pauses when the tab is hidden |
+| Clock | Runs regardless | Pauses when the tab is hidden, or when you pause |
 | Dose | Unlimited | Two sessions a day, with an explanation |
 
 ## Layout
@@ -55,5 +55,5 @@ docs/            research, product ideas, failure-mode analysis
 
 ## Storage
 
-Everything lives in `localStorage` under `sidvision.*`. No server, no database, no account.
+Everything lives in `localStorage` under `iris.*`. No server, no database, no account.
 Clearing site data resets your history.

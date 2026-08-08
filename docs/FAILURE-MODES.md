@@ -1,6 +1,6 @@
 # Failure modes
 
-The user of SidVision is a software engineer with **no optometry background**, working alone at
+The user of Iris is a software engineer with **no optometry background**, working alone at
 home with no clinician watching. Almost every way this goes wrong is silent: the app keeps
 producing plausible numbers while the actual therapy is worthless or harmful.
 

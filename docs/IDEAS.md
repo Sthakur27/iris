@@ -1,4 +1,4 @@
-# SidVision — Ideas
+# Iris — Ideas
 
 How we beat HTS2. Written for a single adult user with convergence insufficiency and
 accommodative dysfunction, a laptop, a webcam, red/blue anaglyph glasses, and a set of
@@ -511,7 +511,7 @@ Adherence is a contribution graph; `git log` is your history.
 relationship with, at nearly zero implementation cost, and it makes the data portable.
 *Cost:* S
 
-**`sidvision status` in the shell prompt / MOTD** — today's remaining blocks and current
+**`iris status` in the shell prompt / MOTD** — today's remaining blocks and current
 threshold, in the terminal.
 *Cost:* S
 

@@ -1,4 +1,5 @@
 import { loadCalibrationEnv, loadSessions } from './settings'
+import { isTherapyPaused, onTherapyPauseChange } from './sessionState'
 
 /**
  * Cross-cutting guards against the silent failure modes in docs/FAILURE-MODES.md.
@@ -73,14 +74,20 @@ export class PausableClock {
   private elapsedMs = 0
   private lastResume: number | null = null
   private readonly onVisibility: () => void
+  private readonly unsubscribePause: () => void
 
   constructor() {
-    this.lastResume = document.visibilityState === 'visible' ? Date.now() : null
+    // Runs only when the tab is visible and the user has not paused. Both stop the
+    // clock for the same reason: no therapy is happening.
+    const shouldRun = (): boolean => !document.hidden && !isTherapyPaused()
+
+    this.lastResume = shouldRun() ? Date.now() : null
     this.onVisibility = () => {
-      if (document.visibilityState === 'visible') this.resume()
+      if (shouldRun()) this.resume()
       else this.pause()
     }
     document.addEventListener('visibilitychange', this.onVisibility)
+    this.unsubscribePause = onTherapyPauseChange(this.onVisibility)
   }
 
   private pause(): void {
@@ -105,6 +112,7 @@ export class PausableClock {
 
   dispose(): void {
     document.removeEventListener('visibilitychange', this.onVisibility)
+    this.unsubscribePause()
   }
 }
 

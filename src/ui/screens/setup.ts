@@ -11,8 +11,15 @@
 import { el } from '../router'
 import type { Screen } from '../router'
 import { CREDIT_CARD_WIDTH_CM } from '../../core/geometry'
-import { loadSettings, saveSettings } from '../../core/settings'
-import type { EyeSide, Settings } from '../../core/types'
+import {
+  describeDistance,
+  fromDisplayLength,
+  loadSettings,
+  measuringTip,
+  saveSettings,
+  toDisplayLength,
+} from '../../core/settings'
+import type { EyeSide, LengthUnit, Settings } from '../../core/types'
 import '../screens.css'
 
 /** Outside this range the slider was almost certainly matched to the wrong edge. */
@@ -22,11 +29,13 @@ const MAX_PX_PER_CM = 120
 /** ISO/IEC 7810 ID-1: 85.60 mm x 53.98 mm. Every bank card in the world. */
 const CARD_ASPECT = 85.6 / 53.98
 
+/** Fixed by design: the app assumes red over the right eye everywhere. */
+const RED_EYE: EyeSide = 'right'
+
 const MIN_DISTANCE_CM = 20
 const MAX_DISTANCE_CM = 150
 
 type Phase = 'scale' | 'distance' | 'orientation'
-type EyeCheck = 'ask' | 'confirm' | 'mismatch' | 'done'
 type ScaleMode = 'card' | 'spec'
 type SpecAxis = 'diagonal' | 'width'
 type SpecUnit = 'in' | 'cm'
@@ -59,8 +68,6 @@ export const setupScreen: Screen = (root, nav) => {
   let phase: Phase = 'scale'
   let pxPerCm = settings.calibration.pxPerCm
   let distanceCm = settings.calibration.viewingDistanceCm
-  let redEye: EyeSide | null = null
-  let eyeCheck: EyeCheck = 'ask'
   let error: string | null = null
 
   // Two ways to establish screen scale. Card matching works anywhere and needs no
@@ -70,6 +77,7 @@ export const setupScreen: Screen = (root, nav) => {
   let specAxis: SpecAxis = 'diagonal'
   let specUnit: SpecUnit = 'in'
   let specValue = 24
+  let preferredUnit: LengthUnit = settings.preferredUnit
 
   const screen = el('div', { class: 'screen' })
   root.append(screen)
@@ -284,12 +292,40 @@ export const setupScreen: Screen = (root, nav) => {
 
   function distanceStep(): HTMLElement {
     const card = el('div', { class: 'card' })
-    const input = el('input', {
-      type: 'number',
-      min: String(MIN_DISTANCE_CM),
-      max: String(MAX_DISTANCE_CM),
-      step: '1',
-      value: String(distanceCm),
+
+    const input = el('input', { type: 'number', min: '5', max: '200', step: '0.5' })
+    const unitSelect = el('select')
+    unitSelect.append(el('option', { value: 'cm' }, 'cm'), el('option', { value: 'in' }, 'inches'))
+    unitSelect.value = preferredUnit
+
+    const both = el('div', { class: 'readout' })
+    const anchor = el('p', { class: 'gloss' })
+    const tip = el('p', { class: 'gloss' })
+
+    const paint = (): void => {
+      input.value = String(Math.round(toDisplayLength(distanceCm, preferredUnit) * 10) / 10)
+      const cm = Math.round(distanceCm)
+      const inches = Math.round(toDisplayLength(distanceCm, 'in'))
+      both.textContent = `${cm} cm — about ${inches} inches`
+      anchor.textContent = describeDistance(distanceCm)
+      tip.textContent = measuringTip(distanceCm)
+    }
+
+    input.addEventListener('input', () => {
+      const typed = Number(input.value)
+      if (!Number.isFinite(typed)) return
+      distanceCm = fromDisplayLength(typed, preferredUnit)
+      error = null
+      // Repaint everything except the field being typed into, or the cursor jumps.
+      const cm = Math.round(distanceCm)
+      both.textContent = `${cm} cm — about ${Math.round(toDisplayLength(distanceCm, 'in'))} inches`
+      anchor.textContent = describeDistance(distanceCm)
+      tip.textContent = measuringTip(distanceCm)
+    })
+
+    unitSelect.addEventListener('change', () => {
+      preferredUnit = unitSelect.value as LengthUnit
+      paint()
     })
 
     card.append(
@@ -297,25 +333,33 @@ export const setupScreen: Screen = (root, nav) => {
       el(
         'p',
         {},
-        'How far your eyes sit from the screen, in centimetres. Measure it once with a tape measure in ' +
-          'your normal working posture — 40 cm is a typical laptop distance and is the default.',
+        'How far your eyes sit from the screen when you are working normally. Sit the way you actually sit, ' +
+          'then measure — do not measure the posture you wish you had.',
       ),
       el(
         'p',
         {},
-        'Difficulty here is measured in prism dioptres (Δ) — the amount your two eyes have to turn ' +
-          'relative to each other to fuse the two images into one. For a fixed image separation on screen, ' +
-          'that demand is inversely proportional to your distance from it.',
+        'Difficulty here is measured in prism dioptres (Δ) — how far your two eyes have to turn relative to ' +
+          'each other to fuse the two images into one. For a fixed image separation on screen, that demand is ' +
+          'inversely proportional to your distance from it.',
       ),
       el(
         'p',
         {},
-        'So leaning in makes the exercise easier without telling you. Lean from 40 cm to 30 cm and you have ' +
-          'quietly cut the demand by a quarter while the screen still reports the old number — this is the most ' +
-          'common way home vision therapy fools itself. If you catch yourself leaning in on the hard reps, ' +
-          'sit back; do not lower this number to match the lean.',
+        'Which is why leaning in makes the exercise easier without telling you. Lean from 40 cm to 30 cm and ' +
+          'you have quietly cut the demand by a quarter while the screen still reports the old number — the most ' +
+          'common way home vision therapy fools itself. If you catch yourself leaning in on the hard reps, sit ' +
+          'back; do not lower this number to match the lean.',
       ),
-      el('div', { class: 'field' }, el('label', {}, 'Viewing distance (cm)'), input),
+      el(
+        'div',
+        { class: 'row' },
+        el('div', { class: 'field' }, el('label', {}, 'Viewing distance'), input),
+        el('div', { class: 'field' }, el('label', {}, 'Units'), unitSelect),
+      ),
+      both,
+      anchor,
+      tip,
     )
 
     const back = el('button', {}, 'Back')
@@ -325,190 +369,120 @@ export const setupScreen: Screen = (root, nav) => {
       render()
     })
 
-    const next = el('button', { class: 'primary' }, 'Next: red/blue orientation')
+    const next = el('button', { class: 'primary' }, 'Next: how to wear the glasses')
     next.addEventListener('click', () => {
-      const value = Number(input.value)
-      if (!Number.isFinite(value) || value < MIN_DISTANCE_CM || value > MAX_DISTANCE_CM) {
-        error = `Enter a viewing distance between ${MIN_DISTANCE_CM} and ${MAX_DISTANCE_CM} cm.`
+      if (!Number.isFinite(distanceCm) || distanceCm < MIN_DISTANCE_CM || distanceCm > MAX_DISTANCE_CM) {
+        error = `Enter a viewing distance between ${MIN_DISTANCE_CM} and ${MAX_DISTANCE_CM} cm (${Math.round(
+          MIN_DISTANCE_CM / 2.54,
+        )}–${Math.round(MAX_DISTANCE_CM / 2.54)} inches).`
         render()
         return
       }
-      distanceCm = value
       error = null
       phase = 'orientation'
       render()
     })
 
+    paint()
     card.append(el('div', { class: 'actions' }, back, next))
     return card
   }
 
   /* ------------------------------------------------------------- step 3 */
 
-  function swatch(colour: 'red' | 'blue', onPick: () => void): HTMLElement {
-    const button = el('button', { class: `swatch swatch-${colour}` })
-    button.setAttribute('aria-label', `${colour} square`)
-    button.addEventListener('click', onPick)
-    return el(
-      'div',
-      { class: 'swatch-wrap' },
-      button,
-      el('div', { class: 'muted' }, colour.toUpperCase()),
-    )
-  }
-
+  /**
+   * Orientation is fixed, not asked.
+   *
+   * This used to be a two-step interactive check ("close your left eye, click the
+   * square that vanishes"), and it was the most confusing screen in the app —
+   * reasoning about which lens you are looking through is genuinely hard, and getting
+   * it backwards silently inverts every exercise. Anaglyph glasses are sold
+   * overwhelmingly red-left/blue-right or red-right/blue-left, and rather than infer
+   * it we simply require one orientation and show you what it looks like.
+   */
   function orientationStep(): HTMLElement {
     const card = el('div', { class: 'card' })
     card.append(
-      el('h2', {}, 'Which eye is behind the red lens'),
+      el('h2', {}, 'Wear the glasses this way round'),
       el(
         'p',
         {},
-        'Anaglyph glasses give each eye a different image: the red lens passes red light and blocks blue, ' +
-          'and the blue lens does the opposite. The app has to know which way round yours are.',
+        'The red lens goes over your RIGHT eye. Iris assumes that everywhere, so it is the one thing ' +
+          'you have to get right by hand rather than something the app can detect.',
       ),
       el(
         'p',
         { class: 'warn' },
-        'If this is recorded backwards, every convergence exercise trains divergence and every divergence ' +
-          'exercise trains convergence — the exact opposite of what was prescribed — and nothing on screen ' +
-          'would look wrong. So this step is checked twice.',
+        'Worn the other way round, every convergence exercise trains divergence and every divergence ' +
+          'exercise trains convergence — the exact opposite of what was prescribed — and nothing on ' +
+          'screen would look wrong. If your glasses are the other way round, turn them over.',
       ),
-      el('p', {}, 'Put the glasses on now, in a dimly lit room, before answering.'),
+      el('div', { class: 'orientation-pair' }, glassesDiagram(true), glassesDiagram(false)),
+      el(
+        'p',
+        { class: 'gloss' },
+        'These are drawn as if you are wearing them and looking out, so the lens on the right of each ' +
+          'picture is the one over your right eye.',
+      ),
+      el(
+        'div',
+        { class: 'stat-grid' },
+        stat('Screen scale', `${pxPerCm.toFixed(1)} px/cm`),
+        stat('Viewing distance', `${distanceCm} cm`),
+        stat('Red lens', 'right eye'),
+      ),
+      el(
+        'p',
+        { class: 'gloss' },
+        'You can redo any of this at any time from Settings → Recalibrate. Redo it whenever you change ' +
+          'screen, resolution, chair, or desk — the numbers stop being comparable at that point.',
+      ),
     )
 
-    if (eyeCheck === 'ask') {
-      card.append(
-        el(
-          'p',
-          {},
-          'Close your LEFT eye and look at these two squares with your right eye only. One of them will ' +
-            'go almost black. Click that one.',
-        ),
-        el(
-          'div',
-          { class: 'swatch-stage' },
-          swatch('red', () => pick('left')),
-          swatch('blue', () => pick('right')),
-        ),
-      )
-    }
+    const back = el('button', {}, 'Back')
+    back.addEventListener('click', () => {
+      error = null
+      phase = 'distance'
+      render()
+    })
 
-    if (eyeCheck === 'confirm' && redEye) {
-      const vanishedFirst = redEye === 'right' ? 'blue' : 'red'
-      const shouldVanishNow = vanishedFirst === 'blue' ? 'red' : 'blue'
-      card.append(
-        el(
-          'p',
-          {},
-          `You said the ${vanishedFirst} square vanished for your right eye, which means the red lens is over ` +
-            `your ${redEye.toUpperCase()} eye. Now the reverse check.`,
-        ),
-        el(
-          'p',
-          {},
-          `Close your RIGHT eye instead and open the left. The ${shouldVanishNow.toUpperCase()} square should ` +
-            'now be the one that goes black.',
-        ),
-        el(
-          'div',
-          { class: 'swatch-stage' },
-          swatch('red', () => confirmPick('red', shouldVanishNow)),
-          swatch('blue', () => confirmPick('blue', shouldVanishNow)),
-        ),
-      )
-    }
-
-    if (eyeCheck === 'mismatch') {
-      card.append(
-        el(
-          'div',
-          { class: 'notice is-bad' },
-          el(
-            'p',
-            {},
-            'The two checks disagree. Either the glasses are on upside down, or the lenses are leaking so ' +
-              'badly that neither eye is properly separated — a scratched, dusty, or red/cyan-instead-of-red/blue ' +
-              'pair does this. Clean them, dim the room, make sure they are the right way up, and try again.',
-          ),
-        ),
-      )
-      const retry = el('button', { class: 'primary' }, 'Try the check again')
-      retry.addEventListener('click', () => {
-        redEye = null
-        eyeCheck = 'ask'
-        render()
+    const finish = el('button', { class: 'primary big-start' }, 'Save calibration')
+    finish.addEventListener('click', () => {
+      saveSettings({
+        ...settings,
+        preferredUnit,
+        calibration: {
+          pxPerCm: Math.round(pxPerCm * 10) / 10,
+          viewingDistanceCm: distanceCm,
+          redEye: RED_EYE,
+        },
       })
-      card.append(retry)
-    }
+      nav.go('home')
+    })
 
-    if (eyeCheck === 'done' && redEye) {
-      card.append(
-        el(
-          'div',
-          { class: 'notice is-good' },
-          el('p', {}, `Both checks agree: the red lens is over your ${redEye.toUpperCase()} eye.`),
-        ),
-        el(
-          'div',
-          { class: 'stat-grid' },
-          stat('Screen scale', `${pxPerCm.toFixed(1)} px/cm`),
-          stat('Viewing distance', `${distanceCm} cm`),
-          stat('Red lens', `${redEye} eye`),
-        ),
-        el(
-          'p',
-          { class: 'gloss' },
-          'You can redo any of this at any time from Settings → Recalibrate. Redo it whenever you change ' +
-            'screen, resolution, chair, or desk — the numbers stop being comparable at that point.',
-        ),
-      )
-
-      const finish = el('button', { class: 'primary big-start' }, 'Save calibration')
-      finish.addEventListener('click', () => {
-        if (!redEye) return
-        saveSettings({
-          ...settings,
-          calibration: {
-            pxPerCm: Math.round(pxPerCm * 10) / 10,
-            viewingDistanceCm: distanceCm,
-            redEye,
-          },
-        })
-        nav.go('home')
-      })
-      card.append(el('div', { class: 'actions' }, finish))
-    }
-
-    if (eyeCheck === 'ask') {
-      const back = el('button', {}, 'Back')
-      back.addEventListener('click', () => {
-        error = null
-        phase = 'distance'
-        render()
-      })
-      card.append(el('div', { class: 'actions' }, back))
-    }
-
+    card.append(el('div', { class: 'actions' }, finish, back))
     return card
   }
 
-  /**
-   * Closing the LEFT eye means you are looking through the RIGHT lens. The lens
-   * you are looking through passes its own colour and blocks the other, so the
-   * square that vanishes is the *opposite* colour to that lens.
-   */
-  function pick(eyeOfVanishingColour: EyeSide): void {
-    // Clicking red (red vanished) ⇒ the right lens is blue ⇒ red lens is on the left.
-    redEye = eyeOfVanishingColour
-    eyeCheck = 'confirm'
-    render()
+  /** Left lens in the picture = your left eye, because you are looking outwards. */
+  function glassesDiagram(correct: boolean): HTMLElement {
+    const leftColour = correct ? 'blue' : 'red'
+    const rightColour = correct ? 'red' : 'blue'
+    return el(
+      'div',
+      { class: `glasses${correct ? ' is-correct' : ' is-wrong'}` },
+      el('div', { class: 'glasses-mark' }, correct ? '✓' : '✗'),
+      el(
+        'div',
+        { class: 'glasses-lenses' },
+        el('div', { class: `lens lens-${leftColour}` }, el('span', {}, 'your\nleft eye')),
+        el('div', { class: 'glasses-bridge' }),
+        el('div', { class: `lens lens-${rightColour}` }, el('span', {}, 'your\nright eye')),
+      ),
+      el('div', { class: 'glasses-caption' }, correct ? 'Correct' : 'Turn them over'),
+    )
   }
 
-  function confirmPick(clicked: 'red' | 'blue', expected: 'red' | 'blue'): void {
-    eyeCheck = clicked === expected ? 'done' : 'mismatch'
-    render()
-  }
 
   function stat(label: string, value: string): HTMLElement {
     return el(
@@ -521,7 +495,7 @@ export const setupScreen: Screen = (root, nav) => {
 
   function render(): void {
     const children: (HTMLElement | string)[] = [
-      el('h1', {}, 'Calibrate SidVision'),
+      el('h1', {}, 'Calibrate Iris'),
       el(
         'p',
         {},

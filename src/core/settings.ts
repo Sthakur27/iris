@@ -1,4 +1,4 @@
-import type { ProcedureId, SessionRecord, Settings } from './types'
+import type { LengthUnit, ProcedureId, SessionRecord, Settings } from './types'
 
 /**
  * HTS's published defaults, used as starting values only.
@@ -29,6 +29,40 @@ export const DEFAULT_SETTINGS: Settings = {
     rockCpmGoal: 13,
   },
   restBetweenRepsMs: 0,
+  preferredUnit: 'cm',
+  advancedMode: false,
+}
+
+const CM_PER_INCH = 2.54
+
+export function toDisplayLength(cm: number, unit: LengthUnit): number {
+  return unit === 'in' ? cm / CM_PER_INCH : cm
+}
+
+export function fromDisplayLength(value: number, unit: LengthUnit): number {
+  return unit === 'in' ? value * CM_PER_INCH : value
+}
+
+/**
+ * A plain-language anchor for a viewing distance.
+ *
+ * "Sit at 40 cm" is a number almost nobody can act on — most people have no
+ * calibrated sense of it, and guessing wrong silently changes every demand in the
+ * programme, because demand in prism dioptres is inversely proportional to distance.
+ * Leaning from 40 cm to 30 cm quietly cuts the demand by a quarter.
+ */
+export function describeDistance(cm: number): string {
+  if (cm < 30) return 'Closer than most people sit — closer than a paperback held to read.'
+  if (cm < 45) return 'Typical laptop distance: elbow on the desk, screen about a forearm away.'
+  if (cm < 60) return 'A relaxed desktop-monitor distance — a forearm plus a hand.'
+  if (cm < 80) return 'About arm’s length: sit back, reach out, and your fingertips graze the screen.'
+  return 'Further than arm’s length — a large monitor or a TV across the room.'
+}
+
+/** Something in every house that is a known length, for checking the guess. */
+export function measuringTip(cm: number): string {
+  const sheets = cm / 29.7 // A4 long edge; US Letter is 27.9 cm, close enough to say "about"
+  return `A sheet of printer paper is about 30 cm on its long edge — you are aiming for roughly ${sheets.toFixed(1)} of those, end to end, from your eyes to the screen.`
 }
 
 /** HTS's default Daily Therapy Protocol, in order, with its published durations. */
@@ -43,8 +77,8 @@ export const DAILY_PROTOCOL: { id: ProcedureId; label: string; seconds: number }
 /** Jump Ductions is gated behind Convergence and Divergence, exactly as HTS gates it. */
 export const JUMP_DUCTIONS = { id: 'jumpDuctions' as const, label: 'Jump Ductions', seconds: 420 }
 
-const SETTINGS_KEY = 'sidvision.settings.v1'
-const SESSIONS_KEY = 'sidvision.sessions.v1'
+const SETTINGS_KEY = 'iris.settings.v1'
+const SESSIONS_KEY = 'iris.sessions.v1'
 
 export function loadSettings(): Settings {
   const raw = localStorage.getItem(SETTINGS_KEY)
@@ -62,7 +96,7 @@ export function loadSettings(): Settings {
   }
 }
 
-const CALIBRATION_ENV_KEY = 'sidvision.calibrationEnv.v1'
+const CALIBRATION_ENV_KEY = 'iris.calibrationEnv.v1'
 
 /**
  * The rendering environment in force when the screen was calibrated.
@@ -147,6 +181,7 @@ export function saveSession(record: SessionRecord): void {
 
 /** True once Convergence and Divergence have each been run to completion at least once. */
 export function jumpDuctionsUnlocked(): boolean {
+  if (loadSettings().advancedMode) return true
   const done = new Set<ProcedureId>()
   for (const session of loadSessions()) {
     for (const r of session.results) done.add(r.procedure)

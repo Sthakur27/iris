@@ -22,8 +22,21 @@ import type { Trial } from './types'
 /** Below this, a response cannot reflect an actual fused percept — it is anticipation. */
 export const MIN_PLAUSIBLE_LATENCY_MS = 250
 
-/** Fraction of trials presented with no target, to measure false-alarm rate. */
-export const CATCH_TRIAL_RATE = 0.12
+/**
+ * Fraction of trials presented with no resolvable target.
+ *
+ * **Currently 0 — catch trials are switched off.** They were confusing in practice:
+ * a target you cannot read looks like a rendering fault, not a deliberate probe, and
+ * answering one with an arrow key quietly lowered the demand for a reason the user
+ * had no way to know about. The cost of turning them off is that `falseAlarmRate()`
+ * has nothing to measure, so guessing is now caught only by accuracy failing to beat
+ * chance and by the anticipation rule — both weaker signals, and both invisible to
+ * the user, which is the point.
+ *
+ * The code paths remain in place so this is a one-line decision to revisit rather
+ * than a rewrite.
+ */
+export const CATCH_TRIAL_RATE = 0
 
 export type ResponseKind = 'answer' | 'cannotSee'
 

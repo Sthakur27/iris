@@ -1,7 +1,7 @@
 import type { EyeSide } from '../core/types'
 import type { Procedure, ProcedureContext } from './base'
 import type { IntegrityTrial, ResponseKind } from '../core/integrity'
-import { FatigueMonitor, visibleTimeout } from './base'
+import { FatigueMonitor, createElapsedClock, visibleTimeout } from './base'
 import { CATCH_TRIAL_RATE, IntegrityMonitor, MIN_PLAUSIBLE_LATENCY_MS } from '../core/integrity'
 import { drawLandoltC } from '../core/anaglyph'
 import { el } from '../ui/router'
@@ -368,7 +368,12 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
   }
   window.addEventListener('resize', onResize)
 
-  const startedAt = performance.now()
+  /**
+   * Therapy actually done: stops for hidden tabs and for pauses, like the session clock.
+   * Cycles-per-minute is measured against this rather than wall time, so a pause cannot
+   * quietly deflate the rate the user is judged on.
+   */
+  const elapsed = createElapsedClock()
   const clock = window.setInterval(() => paintClock(), 500)
 
   function currentLevel(): { level: number; rightEyeD: number; leftEyeD: number } {
@@ -381,10 +386,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
   }
 
   function paintClock(): void {
-    const s = Math.floor((performance.now() - startedAt) / 1000)
-    const mm = String(Math.floor(s / 60)).padStart(2, '0')
-    const ss = String(s % 60).padStart(2, '0')
-    hudClock.textContent = `${mm}:${ss} elapsed`
+    hudClock.textContent = `${elapsed.format()} elapsed`
   }
 
   function paintHud(): void {
@@ -455,8 +457,23 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
         }
 
         const isCatch = row.catches[i] === true
+
+        /*
+         * The anticipation rule only applies to the first C of a row.
+         *
+         * It exists to catch answers that arrive faster than a percept of a *newly
+         * presented* stimulus could form. That holds for the first C after a colour
+         * change, where the eye is genuinely refocusing through a new lens power —
+         * and that latency is the accommodative clearing time we care about.
+         *
+         * It does not hold for Cs two to four. HTS shows the whole row at once, so
+         * those have been on screen and legible since the row appeared; answering
+         * one in 200 ms is fast reading, not a guess. Applying the threshold there
+         * discarded legitimately quick responses as if they were cheating, which
+         * both lost real data and punished the user for being good at the task.
+         */
         const anticipated =
-          response.kind === 'answer' && response.latencyMs < MIN_PLAUSIBLE_LATENCY_MS
+          i === 0 && response.kind === 'answer' && response.latencyMs < MIN_PLAUSIBLE_LATENCY_MS
 
         let correct: boolean
         if (response.kind === 'cannotSee') {
@@ -543,6 +560,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
     await showSummary()
   } finally {
     window.clearInterval(clock)
+    elapsed.dispose()
     window.removeEventListener('resize', onResize)
     sparkles.dispose()
     feedback.close()
@@ -559,6 +577,9 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
       directions.push(DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)] ?? 'up')
       // Never make the first C of a row a catch: that slot carries the clearing time,
       // which is the one measurement this procedure exists to produce.
+      // CATCH_TRIAL_RATE is currently 0, so no row ever gets a catch C and every branch
+      // that depends on one — including the "that gap was too small to read" copy — is
+      // dormant rather than dead. Restoring catch trials is a change to that rate.
       catches.push(i > 0 && Math.random() < CATCH_TRIAL_RATE)
       catchRotations.push(Math.random() * Math.PI * 2)
     }
@@ -713,7 +734,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
     hudLevel.textContent = ''
     hudWarning.textContent = ''
 
-    const minutes = (performance.now() - startedAt) / 60_000
+    const minutes = elapsed.ms() / 60_000
     const cycles = Math.floor(rowIndex / 2)
     const cpm = minutes > 0.25 ? cycles / minutes : null
 

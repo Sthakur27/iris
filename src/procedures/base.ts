@@ -1,4 +1,6 @@
 import type { ProcedureId, ProcedureResult, Settings, Trial } from '../core/types'
+import { isTherapyPaused, onTherapyPauseChange } from '../core/sessionState'
+import { PausableClock } from '../core/safety'
 
 /**
  * Integration contract for every procedure.
@@ -80,26 +82,72 @@ export function visibleTimeout(fn: () => void, ms: number): () => void {
   let remaining = ms
   let armedAt = 0
   let timer = 0
+  let running = false
+
+  // A rep is only "on screen" when the tab is visible AND the user has not paused.
+  const shouldRun = (): boolean => !document.hidden && !isTherapyPaused()
 
   const arm = (): void => {
+    if (running) return
+    running = true
     armedAt = performance.now()
     timer = window.setTimeout(fn, remaining)
   }
   const disarm = (): void => {
+    if (!running) return
+    running = false
     window.clearTimeout(timer)
     remaining = Math.max(0, remaining - (performance.now() - armedAt))
   }
-  const onVisibility = (): void => {
-    if (document.hidden) disarm()
-    else arm()
+  const sync = (): void => {
+    if (shouldRun()) arm()
+    else disarm()
   }
 
-  document.addEventListener('visibilitychange', onVisibility)
-  if (!document.hidden) arm()
+  document.addEventListener('visibilitychange', sync)
+  const unsubscribe = onTherapyPauseChange(sync)
+  sync()
 
   return () => {
     window.clearTimeout(timer)
-    document.removeEventListener('visibilitychange', onVisibility)
+    document.removeEventListener('visibilitychange', sync)
+    unsubscribe()
+  }
+}
+
+/**
+ * A procedure's own elapsed-time counter, under the same rule as everything else
+ * here: time accrues only while the tab is visible and therapy is not paused.
+ *
+ * Each procedure used to derive its HUD clock from a raw `performance.now()` baseline,
+ * which kept counting behind a pause overlay or a hidden tab. The session countdown in
+ * `runner.ts` already stops for both, so the two clocks drifted apart on screen and the
+ * procedure's own figure was the dishonest one — it claimed minutes of therapy that
+ * nobody did. `PausableClock` is the same implementation the session clock uses, so the
+ * two now stop and start together by construction rather than by coincidence.
+ */
+export interface ElapsedClock {
+  /** Milliseconds of therapy actually done. */
+  ms(): number
+  seconds(): number
+  /** `mm:ss`, for the HUD. */
+  format(): string
+  /** Detach the visibility and pause listeners. Call from the procedure's `finally`. */
+  dispose(): void
+}
+
+export function createElapsedClock(): ElapsedClock {
+  const clock = new PausableClock()
+  return {
+    ms: () => clock.elapsed(),
+    seconds: () => clock.elapsed() / 1000,
+    format: () => {
+      const total = Math.floor(clock.elapsed() / 1000)
+      const mm = String(Math.floor(total / 60)).padStart(2, '0')
+      const ss = String(total % 60).padStart(2, '0')
+      return `${mm}:${ss}`
+    },
+    dispose: () => clock.dispose(),
   }
 }
 

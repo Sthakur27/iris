@@ -43,7 +43,7 @@ function loadSecrets(root: string, filenames: string[]): void {
  * rules already established; it does not get to invent clinical conclusions.
  */
 
-const SYSTEM = `You are a coach for a home vision therapy app called SidVision, used by one adult
+const SYSTEM = `You are a coach for a home vision therapy app called Iris, used by one adult
 training convergence and accommodative skills alone at home. They are a software engineer with no
 optometry background.
 
@@ -68,12 +68,12 @@ no bullet lists, no praise, no filler.`
 
 export function analyzePlugin(): Plugin {
   return {
-    name: 'sidvision-analyze',
+    name: 'iris-analyze',
     configureServer(server) {
       loadSecrets(server.config.root, ['.api', '.env.local', '.env'])
       if (!process.env.ANTHROPIC_API_KEY) {
         server.config.logger.info(
-          '[sidvision] No ANTHROPIC_API_KEY found in .api or .env — post-session coaching is disabled. Everything else works.',
+          '[iris] No ANTHROPIC_API_KEY found in .api or .env — post-session coaching is disabled. Everything else works.',
         )
       }
 

@@ -197,7 +197,11 @@ export function analyseProcedure(result: ProcedureResult): ProcedureAnalysis {
   const latencies = attempted.map((t) => t.latencyMs)
   const half = Math.floor(attempted.length / 2)
 
-  const buckets = buildBuckets(attempted)
+  // Advanced mode lets the user set the demand by hand, and those reps are marked.
+  // They are real responses and count everywhere else, but they cannot build a demand
+  // bucket: "highest demand sustained" is a claim that the staircase *found* the level,
+  // and a level someone dialled in is not evidence of anything.
+  const buckets = buildBuckets(attempted.filter((t) => t.manualDemand !== true))
   const trustedBuckets = buckets.filter((b) => b.trusted)
 
   const perEye = buildPerEye(attempted)

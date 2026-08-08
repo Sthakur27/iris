@@ -190,6 +190,37 @@ export const settingsScreen: Screen = (root, nav) => {
     )
     children.push(pacing)
 
+    /* ----------------------------------------------------------- testing */
+
+    const testing = el('div', { class: 'card' })
+    const unlockBox = el('input', { type: 'checkbox', checked: settings.advancedMode })
+    unlockBox.addEventListener('change', () => {
+      settings = { ...settings, advancedMode: unlockBox.checked }
+      saveSettings(settings)
+      render()
+    })
+    testing.append(
+      el('h2', {}, 'Advanced'),
+      el(
+        'label',
+        { class: 'toggle-row' },
+        unlockBox,
+        el('span', {}, 'Advanced mode — manual control, and every exercise unlocked'),
+      ),
+      el(
+        'p',
+        { class: 'gloss' },
+        'Two things at once. It unlocks every exercise regardless of progression — Jump Ductions normally ' +
+          'waits until you have completed Convergence and Divergence at least once each, because it alternates ' +
+          'a converging and a diverging demand on successive reps and only makes sense once you can hold each ' +
+          'direction alone. It also exposes direct demand controls instead of letting the adaptive staircase ' +
+          'find your level. Both are useful for testing and both weaken the data: a difficulty you chose by ' +
+          'hand is not evidence you reached it, so trials recorded this way are marked and kept out of your ' +
+          'headline number.',
+      ),
+    )
+    children.push(testing)
+
     /* -------------------------------------------------------- calibration */
 
     const cal = el('div', { class: 'card' })
@@ -274,6 +305,7 @@ export const settingsScreen: Screen = (root, nav) => {
           rockCpmGoal: cpmValue,
         },
         restBetweenRepsMs: Math.round(restValue * 1000),
+        advancedMode: settings.advancedMode,
       }
       saveSettings(settings)
       message = { kind: 'good', text: 'Saved. New values apply from your next session onward.' }
@@ -286,6 +318,7 @@ export const settingsScreen: Screen = (root, nav) => {
         ...settings,
         prescription: structuredClone(DEFAULT_SETTINGS.prescription),
         restBetweenRepsMs: DEFAULT_SETTINGS.restBetweenRepsMs,
+        advancedMode: settings.advancedMode,
       }
       saveSettings(settings)
       message = {
