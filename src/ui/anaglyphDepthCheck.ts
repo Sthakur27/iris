@@ -6,11 +6,20 @@
  * the app: with the lenses swapped, every convergence exercise trains divergence
  * and nothing on screen looks wrong. So this asks for a demonstration instead.
  *
- * Four random-dot stereograms, each hiding a square at a different depth. The dots
- * are defined by a hash rather than a picture, so neither eye alone receives a
- * square at all — there is nothing to recognise without both filters, no partial
- * credit, and no way to answer by squinting at the screen. That is what makes the
- * click itself the evidence.
+ * Four random-dot stereograms, each hiding a square. Three of the squares sit
+ * behind the speckle and one stands in front of it; the user clicks the one in
+ * front. The dots are defined by a hash rather than a picture, so neither eye alone
+ * receives a square at all — there is nothing to recognise without both filters, no
+ * partial credit, and no way to answer by squinting at the screen. That is what
+ * makes the click itself the evidence.
+ *
+ * The four disparities are deliberately equal in size and differ only in sign. Any
+ * anaglyph stereogram betrays its target slightly to the naked eye, because inside
+ * the target the two colour channels stop agreeing and the square shows up as a
+ * patch of red/blue fringe. Equal magnitudes make that fringe identical across all
+ * four tiles, so it says "there is a square here" — which is true of every tile —
+ * and nothing whatsoever about which one is in front. Sign is the whole question,
+ * and sign is exactly what the filters, and only the filters, reveal.
  *
  *
  * SIGN CONVENTION — which way the near square is drawn, and why.
@@ -27,16 +36,13 @@
  * `src/core/anaglyph.ts`.)
  *
  * Wear the glasses reversed and each eye receives the copy drawn for the other one,
- * which negates every disparity: the square drawn nearest becomes the one that
- * looks furthest, and the whole depth ordering flips end to end. That inversion is
- * the entire test. Picking the truly-furthest square is not a near miss — it is the
- * signature of reversed glasses, and is reported as exactly that.
- *
- * One honest limitation: without glasses the high-disparity patches do show a faint
- * red/blue fringe where the two channels disagree, so a determined cheat could tell
- * the two extreme tiles from the two middle ones. What they cannot tell is which of
- * the extremes is near and which is far — the sign is the thing being tested, and
- * the sign is invisible without the filters.
+ * which negates every disparity: the one square that should stand in front sinks
+ * behind, and the three that should sink come forward. That inversion is the entire
+ * test. A reversed wearer following the instruction faithfully — click the one that
+ * floats towards you — has three tiles to choose from and every one of them is
+ * wrong, so they cannot pass by being careful, only by turning the glasses over.
+ * It is also visible to them as a state, which is why the copy names it: three
+ * floating and one sunk means the glasses are the wrong way round.
  */
 
 import { el } from './router'
@@ -54,28 +60,26 @@ const FIELD_H = 116
 const TARGET_PX = 48
 
 /**
- * Depth of the nearest square, in prism dioptres of disparity.
+ * Depth of the squares, in prism dioptres of disparity.
  *
  * Deliberately far below anything the ladder ever asks for. This is not an exercise
  * and must not become one: at a demand that takes effort to fuse, failing the check
  * would mean "your vergence is poor today", not "your glasses are the wrong way
  * round", and the wizard would be blocking the wrong people.
  */
-const NEAR_POP_PD = 0.5
+const POP_PD = 0.5
 
 /** Clamps for odd calibrations, so the pop stays fusable and still visible. */
 const MIN_POP_PX = 8
 const MAX_POP_PX = 22
 
 /**
- * Relative depths of the four squares, nearest first before shuffling.
- *
- * Two extremes and two shallow middles. A ranking judgement ("which is nearest")
- * is much easier for someone who has never done this than an absolute one ("is it
- * in front of the screen or behind it?"), and it inverts just as cleanly when the
- * glasses are reversed.
+ * Signs of the four squares' disparities, before shuffling: one in front, three
+ * behind. Odd-one-out among four is the same judgement every exercise in the app
+ * asks for, and a far easier one for a beginner than ranking depths against each
+ * other or deciding in the abstract whether a single square is in front or behind.
  */
-const DEPTH_STEPS = [1, 0.34, -0.34, -1] as const
+const DEPTH_SIGNS = [1, -1, -1, -1] as const
 
 /**
  * Correct picks required in a row.
@@ -88,7 +92,7 @@ const ROUNDS_TO_PASS = 2
 
 export interface DepthCheckOptions {
   cal: Calibration
-  /** Fired once the nearest square has been picked `ROUNDS_TO_PASS` times running. */
+  /** Fired once the square in front has been picked `ROUNDS_TO_PASS` times running. */
   onVerified: () => void
 }
 
@@ -100,7 +104,7 @@ export interface DepthCheckOptions {
 export function createDepthCheck(opts: DepthCheckOptions): HTMLElement {
   const popPx = Math.max(
     MIN_POP_PX,
-    Math.min(MAX_POP_PX, Math.round(prismDioptresToPx(NEAR_POP_PD, opts.cal))),
+    Math.min(MAX_POP_PX, Math.round(prismDioptresToPx(POP_PD, opts.cal))),
   )
 
   let passes = 0
@@ -111,14 +115,12 @@ export function createDepthCheck(opts: DepthCheckOptions): HTMLElement {
   const feedback = el('p', { class: 'gloss' })
 
   function paintRound(): void {
-    const depths = shuffle(DEPTH_STEPS.slice())
-    const near = Math.max(...depths)
-    const far = Math.min(...depths)
+    const signs = shuffle(DEPTH_SIGNS.slice())
 
     stage.replaceChildren(
-      ...depths.map((depth, i) => {
+      ...signs.map((sign, i) => {
         seed += 1
-        return tile(depth, i, () => pick(depth, near, far))
+        return tile(sign, i, () => pick(sign > 0))
       }),
     )
     progress.textContent =
@@ -127,8 +129,8 @@ export function createDepthCheck(opts: DepthCheckOptions): HTMLElement {
         : `One to go — pick ${passes + 1} of ${ROUNDS_TO_PASS}, reshuffled.`
   }
 
-  function pick(depth: number, near: number, far: number): void {
-    if (depth === near) {
+  function pick(wasInFront: boolean): void {
+    if (wasInFront) {
       passes += 1
       if (passes >= ROUNDS_TO_PASS) {
         stage.replaceChildren()
@@ -144,25 +146,20 @@ export function createDepthCheck(opts: DepthCheckOptions): HTMLElement {
       return
     }
 
-    // The one drawn furthest away is precisely what the nearest square looks like
-    // through reversed lenses, so this answer is diagnostic rather than merely wrong.
+    // Every wrong tile is one of the three drawn behind the field, which is also the
+    // set a reversed wearer sees floating — so the reversal is named on every miss
+    // rather than inferred, and the user is told which percept to check it against.
     passes = 0
     paintRound()
-    if (depth === far) {
-      feedback.className = 'gloss warn'
-      feedback.textContent =
-        'That square is the furthest away of the four — which is exactly how the nearest one ' +
-        'looks if the glasses are on the wrong way round. Take them off, turn them over so the ' +
-        'RED lens sits over your right eye, and try again.'
-      return
-    }
-    feedback.className = 'gloss'
+    feedback.className = 'gloss warn'
     feedback.textContent =
-      'That one sits in the middle of the four. Look for the square that seems to hover above ' +
-      'the speckle, closest to your face. Everything has been reshuffled — try again.'
+      'That square sits behind the speckle. Exactly one of the four floats out towards you — if ' +
+      'instead three of them float and only one sinks away, the glasses are on the wrong way ' +
+      'round: turn them over so the RED lens is over your right eye. Everything has been ' +
+      'reshuffled; try again.'
   }
 
-  function tile(depth: number, index: number, onPick: () => void): HTMLElement {
+  function tile(sign: number, index: number, onPick: () => void): HTMLElement {
     const canvas = el('canvas', { class: 'depth-canvas' })
     renderRds(canvas, {
       fieldW: FIELD_W,
@@ -177,7 +174,7 @@ export function createDepthCheck(opts: DepthCheckOptions): HTMLElement {
         cx: FIELD_W / 2,
         cy: FIELD_H / 2,
         sizePx: TARGET_PX,
-        popPx: depth * popPx,
+        popPx: sign * popPx,
       },
       // Fixed by the app, not by the user: this check exists to confirm reality
       // matches it, so it must be drawn for the orientation Iris assumes.

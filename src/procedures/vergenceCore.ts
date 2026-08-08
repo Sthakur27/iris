@@ -602,13 +602,13 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       }
       monitor.push(trial)
       fatigue.push(trial)
-      ctx.onTrial({
-        index: trial.index,
-        demand: trial.demand,
-        correct: trial.correct,
-        latencyMs: trial.latencyMs,
-        ...(handSet ? { manualDemand: true } : {}),
-      })
+      // Forward the whole trial, not a hand-picked subset. The earlier version
+      // rebuilt it field by field and silently dropped `kind` and `isCatch`, which
+      // the results screen needs: it counts attempted reps by `kind === 'answer'`,
+      // so every vergence procedure was reporting zero valid trials no matter how
+      // the session actually went. `IntegrityTrial` extends `Trial`, so there is no
+      // reason to copy fields across by hand.
+      ctx.onTrial(trial)
 
       // Hand-set reps are recorded but never scored as a level held: the metric they
       // would feed exists to say the staircase found the demand, which it did not.
