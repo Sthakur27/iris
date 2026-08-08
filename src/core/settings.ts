@@ -79,12 +79,38 @@ export interface CalibrationEnv {
 }
 
 export function saveSettings(s: Settings): void {
+  const previous = localStorage.getItem(SETTINGS_KEY)
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
+
+  // Only re-stamp the environment when the calibration itself changed. Stamping on
+  // every save would silently re-baseline drift detection: edit a prescription at a
+  // different zoom and the guard would adopt the new zoom as correct, which is
+  // exactly the failure it exists to catch.
+  if (!calibrationChanged(previous, s)) return
+
   const env: CalibrationEnv = {
     devicePixelRatio: window.devicePixelRatio,
     innerWidth: window.innerWidth,
   }
   localStorage.setItem(CALIBRATION_ENV_KEY, JSON.stringify(env))
+}
+
+function calibrationChanged(previousRaw: string | null, next: Settings): boolean {
+  if (localStorage.getItem(CALIBRATION_ENV_KEY) === null) return true
+  if (!previousRaw) return true
+  try {
+    const previous = JSON.parse(previousRaw) as Partial<Settings>
+    const a = previous.calibration
+    const b = next.calibration
+    if (!a) return true
+    return (
+      a.pxPerCm !== b.pxPerCm ||
+      a.viewingDistanceCm !== b.viewingDistanceCm ||
+      a.redEye !== b.redEye
+    )
+  } catch {
+    return true
+  }
 }
 
 export function loadCalibrationEnv(): CalibrationEnv | null {
