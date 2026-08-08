@@ -1,0 +1,129 @@
+import type { ProcedureId, SessionRecord, Settings } from './types'
+
+/**
+ * HTS's published defaults, used as starting values only.
+ *
+ * The flipper ladder is HTS's suggested monocular sequence (3 flippers, 2 levels
+ * each) from the Accommodative Rock manual. The vergence goals are HTS's defaults.
+ * All of it is doctor-assigned in a real programme — edit these in Settings to
+ * whatever you were actually prescribed.
+ */
+export const DEFAULT_SETTINGS: Settings = {
+  calibration: {
+    pxPerCm: 50,
+    viewingDistanceCm: 40,
+    redEye: 'right',
+  },
+  prescription: {
+    convergenceGoalPd: 35,
+    divergenceGoalPd: 13,
+    flipperLevels: [
+      { level: 1, rightEyeD: +0.75, leftEyeD: -1.5 },
+      { level: 2, rightEyeD: -2.5, leftEyeD: +1.25 },
+      { level: 3, rightEyeD: +1.75, leftEyeD: -3.5 },
+      { level: 4, rightEyeD: -4.0, leftEyeD: +2.0 },
+      { level: 5, rightEyeD: +2.25, leftEyeD: -4.5 },
+      { level: 6, rightEyeD: -5.0, leftEyeD: +2.5 },
+    ],
+    rockAccuracyGoal: 0.8,
+    rockCpmGoal: 13,
+  },
+  restBetweenRepsMs: 0,
+}
+
+/** HTS's default Daily Therapy Protocol, in order, with its published durations. */
+export const DAILY_PROTOCOL: { id: ProcedureId; label: string; seconds: number }[] = [
+  { id: 'pursuits', label: 'Pursuits', seconds: 180 },
+  { id: 'saccades', label: 'Saccades', seconds: 180 },
+  { id: 'divergence', label: 'Divergence', seconds: 420 },
+  { id: 'convergence', label: 'Convergence', seconds: 420 },
+  { id: 'accommodativeRock', label: 'Accommodative Rock', seconds: 300 },
+]
+
+/** Jump Ductions is gated behind Convergence and Divergence, exactly as HTS gates it. */
+export const JUMP_DUCTIONS = { id: 'jumpDuctions' as const, label: 'Jump Ductions', seconds: 420 }
+
+const SETTINGS_KEY = 'sidvision.settings.v1'
+const SESSIONS_KEY = 'sidvision.sessions.v1'
+
+export function loadSettings(): Settings {
+  const raw = localStorage.getItem(SETTINGS_KEY)
+  if (!raw) return structuredClone(DEFAULT_SETTINGS)
+  try {
+    const parsed = JSON.parse(raw) as Partial<Settings>
+    return {
+      ...structuredClone(DEFAULT_SETTINGS),
+      ...parsed,
+      calibration: { ...DEFAULT_SETTINGS.calibration, ...parsed.calibration },
+      prescription: { ...DEFAULT_SETTINGS.prescription, ...parsed.prescription },
+    }
+  } catch {
+    return structuredClone(DEFAULT_SETTINGS)
+  }
+}
+
+const CALIBRATION_ENV_KEY = 'sidvision.calibrationEnv.v1'
+
+/**
+ * The rendering environment in force when the screen was calibrated.
+ *
+ * What actually invalidates a calibration is not the absolute zoom level — if you
+ * measured the card at 110% and stay at 110%, your pixels-per-centimetre is still
+ * correct. It is zoom *changing after* you calibrated. So we record the environment
+ * at calibration time and compare against it, rather than trying to detect zoom in
+ * the abstract, which no browser API reports portably.
+ */
+export interface CalibrationEnv {
+  devicePixelRatio: number
+  innerWidth: number
+}
+
+export function saveSettings(s: Settings): void {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
+  const env: CalibrationEnv = {
+    devicePixelRatio: window.devicePixelRatio,
+    innerWidth: window.innerWidth,
+  }
+  localStorage.setItem(CALIBRATION_ENV_KEY, JSON.stringify(env))
+}
+
+export function loadCalibrationEnv(): CalibrationEnv | null {
+  const raw = localStorage.getItem(CALIBRATION_ENV_KEY)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as CalibrationEnv
+  } catch {
+    return null
+  }
+}
+
+export function isCalibrated(): boolean {
+  return localStorage.getItem(SETTINGS_KEY) !== null
+}
+
+export function loadSessions(): SessionRecord[] {
+  const raw = localStorage.getItem(SESSIONS_KEY)
+  if (!raw) return []
+  try {
+    return JSON.parse(raw) as SessionRecord[]
+  } catch {
+    return []
+  }
+}
+
+export function saveSession(record: SessionRecord): void {
+  const all = loadSessions()
+  const existing = all.findIndex((s) => s.id === record.id)
+  if (existing >= 0) all[existing] = record
+  else all.push(record)
+  localStorage.setItem(SESSIONS_KEY, JSON.stringify(all))
+}
+
+/** True once Convergence and Divergence have each been run to completion at least once. */
+export function jumpDuctionsUnlocked(): boolean {
+  const done = new Set<ProcedureId>()
+  for (const session of loadSessions()) {
+    for (const r of session.results) done.add(r.procedure)
+  }
+  return done.has('convergence') && done.has('divergence')
+}
