@@ -427,6 +427,32 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
   let popPx = popDisparityPx(cal)
   let field = planField(goalPd, popPx, cal)
 
+  /*
+   * Refuse to run in a window that cannot present a real demand.
+   *
+   * Below the ladder floor there is nothing to train: the stimulus collapses toward
+   * zero disparity, which is a flat picture, and the exercise would still count reps
+   * and report a level as though something had happened. A too-small window is also
+   * the one case where the honest advice is to change the window rather than to sit
+   * closer, so the usual ceiling warning reads as nonsense here.
+   */
+  if (!(field.ceilingPd >= FLOOR_PD)) {
+    ctx.root.append(
+      el(
+        'div',
+        { class: 'stage-prompt' },
+        `This window is too narrow to present a real ${spec.label.toLowerCase()} demand — ` +
+          `it tops out below ${FLOOR_PD}Δ, which is not enough to train anything. ` +
+          'Make the window wider, or move Iris to a larger display, and start again.',
+      ),
+    )
+    await new Promise<void>((resolve) => {
+      if (ctx.signal.aborted) resolve()
+      else ctx.signal.addEventListener('abort', () => resolve(), { once: true })
+    })
+    return
+  }
+
   const onResize = (): void => {
     popPx = popDisparityPx(cal)
     field = planField(goalPd, popPx, cal)

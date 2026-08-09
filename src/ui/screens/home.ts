@@ -14,7 +14,7 @@
  */
 
 import { el } from '../router'
-import type { Nav, Screen } from '../router'
+import type { Nav, RouteParams, Screen } from '../router'
 import {
   DAILY_PROTOCOL,
   JUMP_DUCTIONS,
@@ -57,9 +57,34 @@ export const homeScreen: Screen = (root, nav) => {
   let selfGuidedHalf = false
   let blockedReason: string | null = null
 
-  // What the checklist is about to launch, so its closing note can describe the
-  // right thing — "about half an hour" is a lie in front of a five-minute run.
-  let requested: SessionRequest = { mode: 'plan' }
+  /**
+   * What the preview is about to launch.
+   *
+   * This has to come from the route, not just from closure state. Entering the
+   * preview pushes a history entry, which re-runs this whole screen with a fresh
+   * closure — so a plain variable set on the way in is already gone by the time the
+   * preview renders, and every exercise silently fell back to the first one in the
+   * plan. Reading it back from the URL also makes the preview survive a reload and
+   * makes the link shareable.
+   */
+  function requestFromRoute(params: RouteParams): SessionRequest {
+    const exercise = params.exercise
+    if (!exercise) return { mode: 'plan' }
+    const minutes = Number(params.minutes)
+    return {
+      mode: 'single',
+      procedureId: exercise,
+      minutes: Number.isFinite(minutes) && minutes > 0 ? minutes : 5,
+    }
+  }
+
+  let requested: SessionRequest = requestFromRoute(routeParams)
+
+  // Keep the module-level pending request in step with the URL. Without this a
+  // reload while sitting on a preview would start whatever was last chosen in a
+  // previous visit — or the plan, on a cold load — rather than the exercise named
+  // on screen. The URL is the source of truth for what is about to run.
+  if (mode === 'checklist') setPendingSession(requested)
 
   const screen = el('div', { class: 'screen' })
   root.append(screen)
@@ -85,7 +110,13 @@ export const homeScreen: Screen = (root, nav) => {
     setPendingSession(request)
     mode = 'checklist'
     // Pushes a history entry, so browser back leaves the preview rather than the app.
-    nav.go('home', { tab, view: 'prepare' })
+    // The exercise travels in the URL because the push re-renders this screen and
+    // anything held only in closure would not survive the trip.
+    const params: RouteParams =
+      request.mode === 'single'
+        ? { tab, view: 'prepare', exercise: request.procedureId, minutes: String(request.minutes) }
+        : { tab, view: 'prepare' }
+    nav.go('home', params)
   }
 
   /** Refusals are stated in full, on whichever tab you are standing on. */
