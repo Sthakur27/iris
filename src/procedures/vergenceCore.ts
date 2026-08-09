@@ -340,23 +340,32 @@ function createManualDemand(opts: {
   })
   slider.style.cssText = 'width:100%;margin:0;display:block'
 
+  const autoBox = el('input', { type: 'checkbox' })
+  const autoRow = el('label')
+  autoRow.style.cssText =
+    'display:flex;gap:6px;align-items:center;margin-top:6px;cursor:pointer'
+  autoRow.append(autoBox, el('span', {}, 'keep the ladder running'))
+
   const note = el('div')
   note.style.cssText = 'margin-top:6px;line-height:1.45'
 
-  node.append(header, slider, note)
+  node.append(header, slider, autoRow, note)
 
   function paint(): void {
     value.textContent = `${magnitudePd.toFixed(1)}Δ`
     note.textContent = engaged
       ? 'Hand-set. The adaptive ladder is off for the rest of this exercise, and these reps are marked — they do not count toward the demand you held.'
-      : `Advanced mode. Drag to set the demand yourself, up to this screen’s ${ceilingPd.toFixed(1)}Δ ceiling. Doing so stops the adaptive ladder for the rest of this exercise.`
+      : autoRun
+        ? 'Ladder on. Dragging jumps the demand to your level and the ladder adapts from there; only the hand-set rep itself is marked.'
+        : `Advanced mode. Drag to set the demand yourself, up to this screen’s ${ceilingPd.toFixed(1)}Δ ceiling. Doing so stops the adaptive ladder for the rest of this exercise.`
   }
 
   slider.addEventListener('input', () => {
     const next = Number(slider.value)
     if (!Number.isFinite(next)) return
     magnitudePd = clamp(next, opts.floorPd, ceilingPd)
-    engaged = true
+    if (autoRun) pendingPd = magnitudePd
+    else engaged = true
     paint()
   })
 
@@ -364,15 +373,34 @@ function createManualDemand(opts: {
   // dragged would quietly eat every answer that followed, so it lets go on commit.
   slider.addEventListener('change', () => slider.blur())
 
+  autoBox.addEventListener('change', () => {
+    autoRun = autoBox.checked
+    if (autoRun && engaged) {
+      // Release a suspended ladder: it resumes from the level currently held.
+      engaged = false
+      pendingPd = magnitudePd
+    }
+    // Same reason as the slider: space is the answer channel, and a focused
+    // checkbox would swallow it as a toggle instead.
+    autoBox.blur()
+    paint()
+  })
+
   paint()
 
   return {
     node,
     engaged: () => engaged,
     magnitudePd: () => magnitudePd,
+    takePendingPd() {
+      const pd = pendingPd
+      pendingPd = null
+      return pd
+    },
     setCeiling(next) {
       ceilingPd = Math.max(opts.floorPd + STEP_UP_PD, next)
       magnitudePd = clamp(magnitudePd, opts.floorPd, ceilingPd)
+      if (pendingPd !== null) pendingPd = clamp(pendingPd, opts.floorPd, ceilingPd)
       slider.max = String(ceilingPd)
       slider.value = String(magnitudePd)
       paint()
@@ -568,13 +596,24 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       const dirIndex = Math.floor(Math.random() * DIRECTIONS.length)
       const direction = DIRECTIONS[dirIndex] ?? 'up'
 
-      // Where this rep's magnitude comes from. Once the slider has been touched it is
-      // the only source for the rest of the run; until then it mirrors the ladder.
+      // Where this rep's magnitude comes from. A latched slider is the only source
+      // for the rest of the run; a pending re-seed (slider dragged with the ladder
+      // kept on) overrides this one rep and the ladder adapts from there; otherwise
+      // the slider mirrors the ladder.
+      let handSet = false
       if (manual) {
-        if (manual.engaged()) magnitude = Math.min(manual.magnitudePd(), field.ceilingPd)
-        else manual.followLadder(magnitude)
+        if (manual.engaged()) {
+          magnitude = Math.min(manual.magnitudePd(), field.ceilingPd)
+          handSet = true
+        } else {
+          const pending = manual.takePendingPd()
+          if (pending !== null) {
+            magnitude = clamp(pending, FLOOR_PD, Math.max(FLOOR_PD, field.ceilingPd))
+            handSet = true
+          }
+          manual.followLadder(magnitude)
+        }
       }
-      const handSet = manual?.engaged() === true
       if (handSet) everManual = true
 
       const requested = spec.signedDemandPd(rep, magnitude, settings.prescription)
