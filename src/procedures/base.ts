@@ -54,11 +54,15 @@ export class FatigueMonitor {
     const accuracy = this.recent.filter((t) => t.correct).length / this.recent.length
     if (accuracy < this.accuracyFloor) return 'Accuracy is dropping — take a short break.'
 
-    const half = Math.floor(this.windowSize / 2)
-    const early = this.recent.slice(0, half)
-    const late = this.recent.slice(-half)
-    const mean = (ts: Trial[]) => ts.reduce((a, t) => a + t.latencyMs, 0) / ts.length
-    if (mean(late) > mean(early) * 1.6) return 'You are slowing down — take a short break.'
+    // Latency-inflation trigger temporarily disabled: it cannot tell fatigue from a
+    // real-life distraction (a knock at the door inflates latency identically), and
+    // in home use the false-positive breaks were more disruptive than the fatigue it
+    // was catching. Re-enable by restoring the block below.
+    // const half = Math.floor(this.windowSize / 2)
+    // const early = this.recent.slice(0, half)
+    // const late = this.recent.slice(-half)
+    // const mean = (ts: Trial[]) => ts.reduce((a, t) => a + t.latencyMs, 0) / ts.length
+    // if (mean(late) > mean(early) * 1.6) return 'You are slowing down — take a short break.'
 
     return null
   }

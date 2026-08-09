@@ -550,7 +550,9 @@ export const homeScreen: Screen = (root, nav) => {
         nav.replace('home', { tab })
         return
       }
-      nav.go('session')
+      // The running exercise names itself in the URL: #/session/divergence rather
+      // than an anonymous #/session that looks the same whatever is on screen.
+      nav.go('session', {}, requested.mode === 'single' ? requested.procedureId : 'plan')
     })
 
     // A second way out, next to Begin. The reminder list is long enough that someone

@@ -25,12 +25,34 @@ import { runSession } from '../../core/runner'
 import type { PlanStep, RunnerHooks, SessionControls } from '../../core/runner'
 import { PROCEDURE_REGISTRY } from '../../procedures/registry'
 import { getPendingSession } from '../../core/sessionState'
+import type { SessionRequest } from '../../core/sessionState'
 import { stampSessionCalibration } from './results'
 import '../screens.css'
 
 export const sessionScreen: Screen = (root, nav) => {
   const settings = loadSettings()
-  const request = getPendingSession()
+
+  /*
+   * What to run comes from the URL first, the pending request second.
+   *
+   * `#/session/divergence` names the exercise, so a reload mid-session restarts the
+   * same one instead of whatever was last chosen, and the address bar says what is
+   * on screen. `plan` means the full protocol. The pending request stays the
+   * fallback for the length, which the segment does not carry.
+   */
+  const pending = getPendingSession()
+  const segment = nav.detail()
+  const request: SessionRequest =
+    segment === null || segment === 'plan'
+      ? segment === 'plan'
+        ? { mode: 'plan' }
+        : pending
+      : {
+          mode: 'single',
+          procedureId: segment,
+          minutes:
+            pending.mode === 'single' && pending.procedureId === segment ? pending.minutes : 5,
+        }
 
   const plan: PlanStep[] = []
   if (request.mode === 'single') {

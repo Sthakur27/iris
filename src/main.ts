@@ -34,9 +34,11 @@ const nav = createRouter(root, {
  */
 function openingRoute(): ScreenId {
   if (!isCalibrated()) return 'setup'
+  // Head segment only: routes may carry a detail, as in `#/session/divergence`.
   const path = window.location.hash.replace(/^#\/?/, '').split('?')[0] ?? ''
+  const head = path.split('/')[0] ?? ''
   const restorable: ScreenId[] = ['home', 'results', 'settings', 'setup']
-  return (restorable as string[]).includes(path) ? (path as ScreenId) : 'home'
+  return (restorable as string[]).includes(head) ? (head as ScreenId) : 'home'
 }
 
 nav.replace(openingRoute())
