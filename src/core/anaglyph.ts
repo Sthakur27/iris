@@ -16,6 +16,16 @@ export interface RdsTarget {
   cx: number
   cy: number
   sizePx: number
+  /**
+   * Drawn width, when it should differ from `sizePx`.
+   *
+   * A depth edge costs an occlusion strip of `popPx / 2` on each side — the band
+   * where one eye can see round the edge and the other cannot. That is real, and it
+   * is how a genuine edge in depth behaves, but it means the part that actually
+   * fuses is `width - popPx` wide against the full height. Drawing `popPx` wider
+   * than tall makes the fused square come out square.
+   */
+  widthPx?: number
   /** Extra disparity applied to the target only, making it float in front of the field. */
   popPx: number
 }
@@ -69,36 +79,44 @@ export function renderRds(canvas: HTMLCanvasElement, p: RdsParams): void {
 
   const t = p.target
   const halfSize = t ? t.sizePx / 2 : 0
+  const halfWidth = t ? (t.widthPx ?? t.sizePx) / 2 : 0
 
   for (const eye of ['left', 'right'] as const) {
     // Red filter passes red light, so the eye behind it sees the red channel.
     const channel = eye === p.redEye ? 0 : 2
 
+    /*
+     * Forward map: walk the cyclopean field and place each dot where this eye sees it.
+     *
+     * The renderer used to walk screen pixels and sample backwards, deciding target
+     * membership from the screen position. That is subtly wrong, because a pixel's
+     * membership has to be decided in the *shared* coordinate system both eyes are
+     * warped from — decide it on screen and each eye tests a different part of the
+     * field, so the two target regions never describe the same square. What came out
+     * was a wide band of disturbance with a narrow fused column down the middle and
+     * uncorrelated dots either side, or, when it failed to fuse, two squares side by
+     * side.
+     *
+     * Walking the field instead makes it unambiguous: one source dot, drawn once per
+     * eye, displaced by that eye's shift for the region it belongs to. Inside the
+     * square both eyes therefore carry the *same* dots at `base + pop` apart, which
+     * is exactly what fuses into a square floating in front of the field. The one
+     * strip of width `pop` at the border where the two eyes disagree is the occlusion
+     * zone a real edge in depth produces, and the visual system reads it as such.
+     */
     for (let y = 0; y < h; y++) {
-      const fieldY = y
-      for (let x = 0; x < w; x++) {
-        const fieldX = x - margin
+      const inTargetRow = t !== null && y >= t.cy - halfSize && y < t.cy + halfSize
 
-        // Is this pixel inside the target as this eye sees it?
-        let shift = eyeShift[eye]
-        if (t) {
-          const tx = t.cx + popShift[eye]
-          if (
-            fieldX >= tx - halfSize &&
-            fieldX < tx + halfSize &&
-            fieldY >= t.cy - halfSize &&
-            fieldY < t.cy + halfSize
-          ) {
-            shift += popShift[eye]
-          }
-        }
+      for (let sourceX = 0; sourceX < p.fieldW; sourceX++) {
+        const inTarget =
+          inTargetRow && t !== null && sourceX >= t.cx - halfWidth && sourceX < t.cx + halfWidth
 
-        // Outside the field for this eye, draw nothing.
-        const srcX = fieldX - shift
-        if (srcX < 0 || srcX >= p.fieldW) continue
+        const shift = eyeShift[eye] + (inTarget ? popShift[eye] : 0)
+        const x = Math.round(sourceX + shift) + margin
+        if (x < 0 || x >= w) continue
 
-        const cellX = Math.floor(srcX / p.dotPx)
-        const cellY = Math.floor(fieldY / p.dotPx)
+        const cellX = Math.floor(sourceX / p.dotPx)
+        const cellY = Math.floor(y / p.dotPx)
         if (hashDot(cellX, cellY, p.seed) >= p.density) continue
 
         const i = (y * w + x) * 4
