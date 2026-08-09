@@ -41,4 +41,13 @@ function openingRoute(): ScreenId {
   return (restorable as string[]).includes(head) ? (head as ScreenId) : 'home'
 }
 
-nav.replace(openingRoute())
+/** Preserve the detail segment on a restorable route, so `#/home/self` survives a reload. */
+function openingDetail(screen: ScreenId): string | undefined {
+  if (screen !== 'home') return undefined
+  const path = window.location.hash.replace(/^#\/?/, '').split('?')[0] ?? ''
+  const tail = path.split('/')[1]
+  return tail === 'self' || tail === 'plan' ? tail : undefined
+}
+
+const opening = openingRoute()
+nav.replace(opening, {}, openingDetail(opening))

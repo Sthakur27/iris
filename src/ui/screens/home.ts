@@ -22,7 +22,7 @@ import {
   loadSessions,
   loadSettings,
 } from '../../core/settings'
-import { MAX_SESSIONS_PER_DAY, canStartSession, sessionsToday } from '../../core/safety'
+import { canStartSession, sessionAdvisory, sessionsToday } from '../../core/safety'
 import { exercisePreviewCard, toProcedureId } from '../exercisePreview'
 import { setPendingSession } from '../../core/sessionState'
 import type { SessionRequest } from '../../core/sessionState'
@@ -52,8 +52,11 @@ export const homeScreen: Screen = (root, nav) => {
    * like it means.
    */
   const routeParams = nav.params()
+  // The tab is a path segment — `#/home/self` — not a query parameter. It names
+  // which of the two ways to train you are looking at, and the user needs backing
+  // out of an exercise to land on the one they started from rather than the default.
   let mode: 'home' | 'checklist' = routeParams.view === 'prepare' ? 'checklist' : 'home'
-  let tab: HomeTab = routeParams.tab === 'self' ? 'self' : 'plan'
+  let tab: HomeTab = nav.detail() === 'self' ? 'self' : 'plan'
   let selfGuidedHalf = false
   let blockedReason: string | null = null
 
@@ -101,8 +104,11 @@ export const homeScreen: Screen = (root, nav) => {
   function beginWith(request: SessionRequest): void {
     const now = canStartSession()
     if (!now.allowed) {
+      // Scrolled into view because the play buttons sit far down a list: without it
+      // the refusal renders above the fold and the button simply appears dead.
       blockedReason = now.reason ?? 'This session cannot start right now.'
       render()
+      screen.querySelector('.notice.is-bad')?.scrollIntoView({ block: 'center' })
       return
     }
     blockedReason = null
@@ -114,9 +120,9 @@ export const homeScreen: Screen = (root, nav) => {
     // anything held only in closure would not survive the trip.
     const params: RouteParams =
       request.mode === 'single'
-        ? { tab, view: 'prepare', exercise: request.procedureId, minutes: String(request.minutes) }
-        : { tab, view: 'prepare' }
-    nav.go('home', params)
+        ? { view: 'prepare', exercise: request.procedureId, minutes: String(request.minutes) }
+        : { view: 'prepare' }
+    nav.go('home', params, tab)
   }
 
   /** Refusals are stated in full, on whichever tab you are standing on. */
@@ -132,12 +138,24 @@ export const homeScreen: Screen = (root, nav) => {
     return notices
   }
 
+  /**
+   * The daily-session line. Advice, never a door.
+   *
+   * Past the advisory point this becomes a visible warning, but the button beside it
+   * still works: a third session is a judgement about fatigue, not a correctness
+   * problem, and the user knows whether they are tired better than a counter does.
+   */
   function sessionsTodayNote(): HTMLElement {
+    const advisory = sessionAdvisory()
+    if (advisory) {
+      return el('div', { class: 'notice is-warn' }, el('p', {}, advisory))
+    }
+    const today = sessionsToday()
     return el(
       'p',
       { class: 'gloss' },
-      `${sessionsToday()} of a maximum ${MAX_SESSIONS_PER_DAY} sessions done today. The cap is there because ` +
-        'fatigue degrades both performance and learning — a third session makes the data worse, not better.',
+      `${today} ${today === 1 ? 'session' : 'sessions'} done today. Vision therapy responds to short ` +
+        'daily practice, so coming back tomorrow beats doing more now.',
     )
   }
 
@@ -157,7 +175,7 @@ export const homeScreen: Screen = (root, nav) => {
         // `replace`, not `go`: flipping between two tabs is not something people
         // expect to unwind one press at a time, but the URL must still say which
         // tab you are on so a reload — or backing out of a preview — returns here.
-        nav.replace('home', { tab })
+        nav.replace('home', {}, tab)
       })
       row.append(b)
     }
@@ -547,7 +565,7 @@ export const homeScreen: Screen = (root, nav) => {
       if (!gate.allowed) {
         blockedReason = gate.reason ?? 'This session cannot start right now.'
         mode = 'home'
-        nav.replace('home', { tab })
+        nav.replace('home', {}, tab)
         return
       }
       // The running exercise names itself in the URL: #/session/divergence rather

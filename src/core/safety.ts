@@ -6,7 +6,7 @@ import { isTherapyPaused, onTherapyPauseChange } from './sessionState'
  * These exist because the user has no way to notice any of them unaided.
  */
 
-/** Two sessions a day is the ceiling. Fatigue degrades both performance and learning. */
+/** Where the daily-session advisory kicks in. Advice, not a limit — see `sessionAdvisory`. */
 export const MAX_SESSIONS_PER_DAY = 2
 
 /**
@@ -55,13 +55,27 @@ export function canStartSession(): { allowed: boolean; reason?: string } {
       reason: `${drift.detail} Every demand would be wrong until you recalibrate. Reset your zoom to what it was, or recalibrate in Settings.`,
     }
   }
-  if (sessionsToday() >= MAX_SESSIONS_PER_DAY) {
-    return {
-      allowed: false,
-      reason: `You have already done ${MAX_SESSIONS_PER_DAY} sessions today. More is not better — fatigue degrades both performance and learning. Come back tomorrow.`,
-    }
-  }
   return { allowed: true }
+}
+
+/**
+ * Advice the user is free to ignore, as distinct from `canStartSession`'s refusals.
+ *
+ * The daily cap used to be a hard block, and hard-blocking it was wrong twice over.
+ * It is a judgement about fatigue, not a correctness constraint — unlike a broken
+ * calibration, a third session produces perfectly valid data, just from a tired
+ * person. And a locked door on your own therapy app invites you to work around it
+ * rather than to think about it. Saying the thing and letting the user decide
+ * respects that they know whether they are tired better than a counter does.
+ */
+export function sessionAdvisory(): string | null {
+  const today = sessionsToday()
+  if (today < MAX_SESSIONS_PER_DAY) return null
+  return (
+    `You have already done ${today} ${today === 1 ? 'session' : 'sessions'} today. ` +
+    'Beyond about two, fatigue starts costing you more than the extra practice gains — ' +
+    'the reps still happen, they just teach your eyes less. Worth stopping unless you have a reason.'
+  )
 }
 
 /**

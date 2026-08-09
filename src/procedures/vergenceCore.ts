@@ -279,14 +279,21 @@ class Feedback {
  *     the "highest demand held" figure. A demand you chose is not evidence you can
  *     hold it.
  *
- * There is no way back to automatic within a run, on purpose: "hand back the wheel"
- * would just be the ambiguous mixture again. Restarting the exercise is the way back.
+ * The "keep the ladder running" checkbox is the sanctioned way back to automatic.
+ * With it checked, a drag is a one-rep re-seed rather than a takeover: the demand
+ * jumps to the hand-set level, that rep alone is marked `manualDemand`, and the
+ * ladder resumes adapting from there. This stays honest because a level only ever
+ * counts toward the headline figure after three trustworthy correct answers at it —
+ * seeding the ladder at a level is not the same as holding it. Checking the box
+ * while the ladder is already suspended releases it from the current level.
  */
 interface ManualDemand {
   node: HTMLElement
-  /** True once the user has moved the slider. Never returns to false. */
+  /** True while the slider has taken over and the ladder is suspended. */
   engaged(): boolean
   magnitudePd(): number
+  /** One-shot hand-set level made with the ladder kept on; null when none pending. */
+  takePendingPd(): number | null
   /** Re-bound to a new screen ceiling after a resize, clamping the current value. */
   setCeiling(ceilingPd: number): void
   /** Track the staircase while it is still in charge, so the slider reads true. */
@@ -303,6 +310,8 @@ function createManualDemand(opts: {
   startPd: number
 }): ManualDemand {
   let engaged = false
+  let autoRun = false
+  let pendingPd: number | null = null
   // A slider whose ends meet cannot be moved, so the ceiling is never the floor.
   let ceilingPd = Math.max(opts.floorPd + STEP_UP_PD, opts.ceilingPd)
   let magnitudePd = clamp(opts.startPd, opts.floorPd, ceilingPd)
