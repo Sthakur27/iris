@@ -279,21 +279,25 @@ class Feedback {
  *     the "highest demand held" figure. A demand you chose is not evidence you can
  *     hold it.
  *
+ * The slider is live: every drag repaints the stimulus that is on screen right now
+ * at the new demand, same dot field and same target, so the effect is visible
+ * immediately rather than one rep late. A rep whose demand was changed mid-flight
+ * is marked `manualDemand` — the answer that follows was made against a demand the
+ * user chose, whatever the ladder thought at onset.
+ *
  * The "keep the ladder running" checkbox is the sanctioned way back to automatic.
- * With it checked, a drag is a one-rep re-seed rather than a takeover: the demand
- * jumps to the hand-set level, that rep alone is marked `manualDemand`, and the
- * ladder resumes adapting from there. This stays honest because a level only ever
- * counts toward the headline figure after three trustworthy correct answers at it —
- * seeding the ladder at a level is not the same as holding it. Checking the box
- * while the ladder is already suspended releases it from the current level.
+ * With it checked, a drag re-seeds rather than takes over: the demand jumps to the
+ * hand-set level and the ladder resumes adapting from there on the next rep. This
+ * stays honest because a level only ever counts toward the headline figure after
+ * three trustworthy correct answers at it — seeding the ladder at a level is not
+ * the same as holding it. Checking the box while the ladder is already suspended
+ * releases it from the current level.
  */
 interface ManualDemand {
   node: HTMLElement
   /** True while the slider has taken over and the ladder is suspended. */
   engaged(): boolean
   magnitudePd(): number
-  /** One-shot hand-set level made with the ladder kept on; null when none pending. */
-  takePendingPd(): number | null
   /** Re-bound to a new screen ceiling after a resize, clamping the current value. */
   setCeiling(ceilingPd: number): void
   /** Track the staircase while it is still in charge, so the slider reads true. */
@@ -308,10 +312,11 @@ function createManualDemand(opts: {
   floorPd: number
   ceilingPd: number
   startPd: number
+  /** Fired on every drag, with the new magnitude. The run repaints live from here. */
+  onSet(magnitudePd: number): void
 }): ManualDemand {
   let engaged = false
   let autoRun = false
-  let pendingPd: number | null = null
   // A slider whose ends meet cannot be moved, so the ceiling is never the floor.
   let ceilingPd = Math.max(opts.floorPd + STEP_UP_PD, opts.ceilingPd)
   let magnitudePd = clamp(opts.startPd, opts.floorPd, ceilingPd)
@@ -356,7 +361,7 @@ function createManualDemand(opts: {
     note.textContent = engaged
       ? 'Hand-set. The adaptive ladder is off for the rest of this exercise, and these reps are marked — they do not count toward the demand you held.'
       : autoRun
-        ? 'Ladder on. Dragging jumps the demand to your level and the ladder adapts from there; only the hand-set rep itself is marked.'
+        ? 'Ladder on. Dragging changes the demand on screen immediately and the ladder adapts from there; reps you adjusted are marked.'
         : `Advanced mode. Drag to set the demand yourself, up to this screen’s ${ceilingPd.toFixed(1)}Δ ceiling. Doing so stops the adaptive ladder for the rest of this exercise.`
   }
 
@@ -364,9 +369,9 @@ function createManualDemand(opts: {
     const next = Number(slider.value)
     if (!Number.isFinite(next)) return
     magnitudePd = clamp(next, opts.floorPd, ceilingPd)
-    if (autoRun) pendingPd = magnitudePd
-    else engaged = true
+    if (!autoRun) engaged = true
     paint()
+    opts.onSet(magnitudePd)
   })
 
   // The arrow keys are the answer channel. A slider that kept focus after being
@@ -375,11 +380,8 @@ function createManualDemand(opts: {
 
   autoBox.addEventListener('change', () => {
     autoRun = autoBox.checked
-    if (autoRun && engaged) {
-      // Release a suspended ladder: it resumes from the level currently held.
-      engaged = false
-      pendingPd = magnitudePd
-    }
+    // Release a suspended ladder: it resumes from the level currently held.
+    if (autoRun && engaged) engaged = false
     // Same reason as the slider: space is the answer channel, and a focused
     // checkbox would swallow it as a toggle instead.
     autoBox.blur()
@@ -392,15 +394,9 @@ function createManualDemand(opts: {
     node,
     engaged: () => engaged,
     magnitudePd: () => magnitudePd,
-    takePendingPd() {
-      const pd = pendingPd
-      pendingPd = null
-      return pd
-    },
     setCeiling(next) {
       ceilingPd = Math.max(opts.floorPd + STEP_UP_PD, next)
       magnitudePd = clamp(magnitudePd, opts.floorPd, ceilingPd)
-      if (pendingPd !== null) pendingPd = clamp(pendingPd, opts.floorPd, ceilingPd)
       slider.max = String(ceilingPd)
       slider.value = String(magnitudePd)
       paint()
@@ -515,18 +511,76 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
   let mode: 'rds' | 'flat' = 'rds'
   let currentSignedPd = 0
 
+  /** Did any rep in this run run on a hand-set demand? Only affects the summary. */
+  let everManual = false
+  /** Did the slider ever latch and suspend the ladder (as opposed to re-seeding it)? */
+  let everLatched = false
+
+  /**
+   * The stimulus currently on screen, kept outside the rep loop so a slider drag can
+   * repaint it at the new demand immediately — same seed, same target, new disparity.
+   * Without this the drag only lands on the next rep, which reads as a dead control.
+   */
+  const live = {
+    onScreen: false,
+    isCatch: false,
+    direction: 'up' as Direction,
+    dirIndex: 0 as 0 | 1 | 2 | 3,
+    seed: 0,
+    /** The demand under the current stimulus was changed by hand mid-rep. */
+    handSet: false,
+    /** A drag landed between reps; the next rep runs on it and must be marked. */
+    pendingMark: false,
+  }
+
+  /** Draws the current stimulus at the current magnitude. Safe to call mid-rep. */
+  function paintStimulus(): void {
+    const requested = spec.signedDemandPd(rep, magnitude, settings.prescription)
+    currentSignedPd = Math.sign(requested) * Math.min(Math.abs(requested), field.ceilingPd)
+    paintHud()
+    const disparityPx = prismDioptresToPx(currentSignedPd, cal)
+    if (mode === 'rds') {
+      paintRds(canvas, {
+        fieldW: field.widthPx,
+        fieldH: field.heightPx,
+        disparityPx,
+        popPx,
+        redEye: cal.redEye,
+        target: live.isCatch ? null : live.direction,
+        seed: live.seed,
+      })
+    } else {
+      paintFlat(canvas, {
+        fieldPx: field.heightPx,
+        disparityPx,
+        redEye: cal.redEye,
+        oddPosition: live.dirIndex,
+        neutralise: live.isCatch,
+      })
+    }
+  }
+
   // Present only in advanced mode. Off by default, and never turned on for the user.
   const manual: ManualDemand | null = settings.advancedMode
     ? createManualDemand({
         floorPd: FLOOR_PD,
         ceilingPd: field.ceilingPd,
         startPd: magnitude,
+        onSet(pd) {
+          magnitude = clamp(pd, FLOOR_PD, Math.max(FLOOR_PD, field.ceilingPd))
+          if (!live.onScreen) {
+            // Mid-rest drag: nothing to repaint, but the rep it lands on is still
+            // a demand the user chose, so it must carry the mark.
+            live.pendingMark = true
+            return
+          }
+          live.handSet = true
+          everManual = true
+          paintStimulus()
+        },
       })
     : null
   if (manual) stage.append(manual.node)
-
-  /** Did any rep in this run run on a hand-set demand? Only affects the summary. */
-  let everManual = false
 
   /**
    * The real outcome measure: the highest demand the user actually held with
@@ -547,7 +601,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     const sense = currentSignedPd >= 0 ? 'crossed' : 'uncrossed'
     // Say it in the HUD too, not only next to the slider: what the demand is and
     // where it came from are the same fact.
-    const source = manual?.engaged() === true ? ' · hand-set' : ''
+    const source = manual?.engaged() === true || live.handSet ? ' · hand-set' : ''
     hudDemand.textContent = `${Math.abs(currentSignedPd).toFixed(1)}Δ ${sense}${source}`
     // HTS lets you fail forever at a demand your screen physically cannot display.
     hudWarning.textContent =
@@ -597,56 +651,43 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       const direction = DIRECTIONS[dirIndex] ?? 'up'
 
       // Where this rep's magnitude comes from. A latched slider is the only source
-      // for the rest of the run; a pending re-seed (slider dragged with the ladder
-      // kept on) overrides this one rep and the ladder adapts from there; otherwise
-      // the slider mirrors the ladder.
+      // for the rest of the run; otherwise the slider mirrors the ladder. Mid-rep
+      // drags land through `paintStimulus` and mark the rep via `live.handSet`.
       let handSet = false
       if (manual) {
         if (manual.engaged()) {
           magnitude = Math.min(manual.magnitudePd(), field.ceilingPd)
           handSet = true
+          everLatched = true
         } else {
-          const pending = manual.takePendingPd()
-          if (pending !== null) {
-            magnitude = clamp(pending, FLOOR_PD, Math.max(FLOOR_PD, field.ceilingPd))
-            handSet = true
-          }
           manual.followLadder(magnitude)
         }
       }
+      if (live.pendingMark) {
+        handSet = true
+        live.pendingMark = false
+      }
       if (handSet) everManual = true
 
-      const requested = spec.signedDemandPd(rep, magnitude, settings.prescription)
-      const signedPd =
-        Math.sign(requested) * Math.min(Math.abs(requested), field.ceilingPd)
-      currentSignedPd = signedPd
-      paintHud()
-
-      const disparityPx = prismDioptresToPx(signedPd, cal)
-      if (mode === 'rds') {
-        paintRds(canvas, {
-          fieldW: field.widthPx,
-          fieldH: field.heightPx,
-          disparityPx,
-          popPx,
-          redEye: cal.redEye,
-          target: isCatch ? null : direction,
-        })
-      } else {
-        paintFlat(canvas, {
-          fieldPx: field.heightPx,
-          disparityPx,
-          redEye: cal.redEye,
-          oddPosition: dirIndex as 0 | 1 | 2 | 3,
-          neutralise: isCatch,
-        })
-      }
+      live.isCatch = isCatch
+      live.direction = direction
+      live.dirIndex = dirIndex as 0 | 1 | 2 | 3
+      // A fresh seed per rep: the dot field must not be memorable between trials.
+      // Held for the rep so a live repaint changes the disparity and nothing else.
+      live.seed = Math.floor(Math.random() * 0x7fffffff)
+      live.handSet = false
+      paintStimulus()
+      live.onScreen = true
 
       const onset = await afterPaint(signal)
       if (signal.aborted) break
 
       const response = await waitForResponse(onset, signal)
+      live.onScreen = false
       if (!response) break
+
+      // A drag during the rep makes it hand-set regardless of how it started.
+      handSet = handSet || live.handSet
 
       // --- Score ----------------------------------------------------------
       const anticipated =
@@ -667,7 +708,10 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
 
       const trial: IntegrityTrial = {
         index: rep,
-        demand: signedPd,
+        // The demand on screen when the answer arrived — a live drag mid-rep means
+        // this can differ from the demand at onset, and the on-screen one is the
+        // one the response was actually made against.
+        demand: currentSignedPd,
         correct,
         latencyMs: Math.round(response.latencyMs),
         isCatch,
@@ -687,7 +731,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       // Hand-set reps are recorded but never scored as a level held: the metric they
       // would feed exists to say the staircase found the demand, which it did not.
       if (!handSet && !isCatch && response.kind === 'answer' && !anticipated) {
-        const key = Math.round(Math.abs(signedPd) * 2) / 2
+        const key = Math.round(Math.abs(currentSignedPd) * 2) / 2
         const bucket = levelStats.get(key) ?? { valid: 0, correct: 0 }
         bucket.valid += 1
         if (correct) bucket.correct += 1
@@ -732,10 +776,12 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       // Driven by the integrity monitor rather than a star/streak gate: accuracy alone
       // floors at 25% chance in a 4AFC task, so it cannot distinguish fusing from guessing.
       //
-      // Skipped entirely once the demand is hand-set. The ladder must not go on moving
-      // underneath a demand the user is holding fixed — it would either fight the slider
-      // or, worse, carry the hand-set level forward as its own and report it later as a
-      // level it found.
+      // Skipped on any hand-set rep. While the slider is latched, the ladder must not
+      // go on moving underneath a demand the user is holding fixed — it would either
+      // fight the slider or, worse, carry the hand-set level forward as its own and
+      // report it later as a level it found. On a re-seed rep ("keep the ladder
+      // running") the skip is one rep long: the ladder resumes from the seeded level
+      // on the next rep, which is exactly what the checkbox promises.
       if (!handSet) {
         const recommendation = monitor.recommendation()
         if (response.kind === 'cannotSee' && !isCatch) {
@@ -794,9 +840,13 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
         : 'No demand level had enough trustworthy responses to score. That is a result, not a failure.'
 
     const notes = verdict.trustworthy ? [] : [...verdict.notes]
-    if (everManual) {
+    if (everLatched) {
       notes.push(
         'You set the demand by hand for part of this run. Those reps are recorded and marked, but excluded from the figure above — it only means anything when the ladder found the level.',
+      )
+    } else if (everManual) {
+      notes.push(
+        'You re-seeded the ladder by hand during this run. The hand-set reps themselves are marked and excluded, but the levels the ladder then confirmed count as normal.',
       )
     }
     promptNote.textContent = notes.join(' ')
@@ -877,6 +927,7 @@ function paintRds(
     popPx: number
     redEye: Settings['calibration']['redEye']
     target: Direction | null
+    seed: number
   },
 ): void {
   const { fieldW, fieldH } = opts
@@ -902,10 +953,22 @@ function paintRds(
     dotPx: DOT_PX,
     density: DOT_DENSITY,
     baseDisparityPx: opts.disparityPx,
-    // A fresh seed per rep: the dot field must not be memorable between trials.
-    seed: Math.floor(Math.random() * 0x7fffffff),
+    // Owned by the rep loop: fresh per rep so the dot field is not memorable
+    // between trials, held within a rep so a live repaint only moves disparity.
+    seed: opts.seed,
     redEye: opts.redEye,
-    target: centre ? { cx: centre.cx, cy: centre.cy, sizePx, popPx: opts.popPx } : null,
+    target: centre
+      ? {
+          cx: centre.cx,
+          cy: centre.cy,
+          sizePx,
+          // Widened by the pop disparity so that what fuses is a square rather than
+          // a vertical rectangle: the occlusion strips at each depth edge eat
+          // `popPx / 2` off the width and nothing off the height.
+          widthPx: sizePx + opts.popPx,
+          popPx: opts.popPx,
+        }
+      : null,
   })
 }
 
