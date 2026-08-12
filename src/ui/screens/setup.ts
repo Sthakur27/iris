@@ -367,10 +367,11 @@ export const setupScreen: Screen = (root, nav) => {
       el(
         'p',
         {},
-        'Which is why leaning in makes the exercise easier without telling you. Lean from 40 cm to 30 cm and ' +
-          'you have quietly cut the demand by a quarter while the screen still reports the old number — the most ' +
-          'common way home vision therapy fools itself. If you catch yourself leaning in on the hard reps, sit ' +
-          'back; do not lower this number to match the lean.',
+        'Which is why your distance changes the exercise without telling you. Demand is the image separation ' +
+          'divided by your distance, so sitting back from 40 cm to 50 cm cuts it by a fifth while the screen ' +
+          'still reports the old number — that is the direction that flatters you. Leaning in does the reverse ' +
+          'and makes each rep harder than the figure claims. Either way the number stops meaning what it says, ' +
+          'so pick a distance you can actually hold and keep to it rather than adjusting this to match a drift.',
       ),
       el(
         'div',

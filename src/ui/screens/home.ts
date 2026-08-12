@@ -415,7 +415,7 @@ export const homeScreen: Screen = (root, nav) => {
       },
       {
         title: `Sitting ${settings.calibration.viewingDistanceCm} cm from the screen`,
-        why: 'That is the distance this app is calibrated to. Sitting closer silently reduces the demand while the screen still reports the old difficulty.',
+        why: 'Difficulty is the image separation divided by your distance, so distance changes it silently. Sitting further back than this makes every rep easier than the number claims; sitting closer makes it harder. Either way the screen reports the calibrated figure.',
       },
       {
         title: 'Same glasses or contacts as your last session',
