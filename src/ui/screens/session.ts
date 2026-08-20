@@ -16,6 +16,7 @@
 import { el } from '../router'
 import type { Screen } from '../router'
 import {
+  CYCLOPEAN_LETTERS,
   DAILY_PROTOCOL,
   JUMP_DUCTIONS,
   jumpDuctionsUnlocked,
@@ -56,7 +57,9 @@ export const sessionScreen: Screen = (root, nav) => {
 
   const plan: PlanStep[] = []
   if (request.mode === 'single') {
-    const known = [...DAILY_PROTOCOL, JUMP_DUCTIONS].find((s) => s.id === request.procedureId)
+    const known = [...DAILY_PROTOCOL, JUMP_DUCTIONS, CYCLOPEAN_LETTERS].find(
+      (s) => s.id === request.procedureId,
+    )
     if (known) {
       plan.push({ id: known.id, label: known.label, seconds: Math.round(request.minutes * 60) })
     }

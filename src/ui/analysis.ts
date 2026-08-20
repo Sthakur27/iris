@@ -36,6 +36,7 @@ export const PROCEDURE_LABELS: Record<ProcedureId, string> = {
   convergence: 'Convergence',
   accommodativeRock: 'Accommodative Rock',
   jumpDuctions: 'Jump Ductions',
+  cyclopeanLetters: 'Cyclopean Letters',
 }
 
 export type DemandUnit = 'pd' | 'level' | 'none'
@@ -46,6 +47,8 @@ export function demandUnit(id: ProcedureId): DemandUnit {
     case 'convergence':
     case 'divergence':
     case 'jumpDuctions':
+    // Cyclopean Letters carries a real crossed-disparity demand, in Δ like the rest.
+    case 'cyclopeanLetters':
       return 'pd'
     case 'accommodativeRock':
       return 'level'

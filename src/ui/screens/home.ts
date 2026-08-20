@@ -16,6 +16,7 @@
 import { el } from '../router'
 import type { Nav, RouteParams, Screen } from '../router'
 import {
+  CYCLOPEAN_LETTERS,
   DAILY_PROTOCOL,
   JUMP_DUCTIONS,
   jumpDuctionsUnlocked,
@@ -104,11 +105,20 @@ export const homeScreen: Screen = (root, nav) => {
   function beginWith(request: SessionRequest): void {
     const now = canStartSession()
     if (!now.allowed) {
-      // Scrolled into view because the play buttons sit far down a list: without it
-      // the refusal renders above the fold and the button simply appears dead.
       blockedReason = now.reason ?? 'This session cannot start right now.'
       render()
-      screen.querySelector('.notice.is-bad')?.scrollIntoView({ block: 'center' })
+      // The refusal notice is usually already on screen before the press (the gate
+      // renders it on load), so re-rendering alone changes nothing the eye can see
+      // and the play button reads as dead. Scroll to it AND pulse it, so every
+      // blocked press produces a visible reaction at the place that explains it.
+      const notice = screen.querySelector('.notice.is-bad')
+      if (notice) {
+        notice.scrollIntoView({ block: 'center' })
+        notice.classList.remove('is-pulsing')
+        // Forcing a reflow restarts the animation on repeated presses.
+        void (notice as HTMLElement).offsetWidth
+        notice.classList.add('is-pulsing')
+      }
       return
     }
     blockedReason = null
@@ -130,7 +140,11 @@ export const homeScreen: Screen = (root, nav) => {
     const gate = canStartSession()
     const notices: HTMLElement[] = []
     if (!gate.allowed && gate.reason) {
-      notices.push(el('div', { class: 'notice is-bad' }, el('p', {}, gate.reason)))
+      // The refusal names recalibration as the way out, so the way out is a button
+      // right here rather than a trip the user has to work out for themselves.
+      const recalibrate = el('button', {}, 'Recalibrate now')
+      recalibrate.addEventListener('click', () => nav.go('setup'))
+      notices.push(el('div', { class: 'notice is-bad' }, el('p', {}, gate.reason), recalibrate))
     }
     if (blockedReason && blockedReason !== gate.reason) {
       notices.push(el('div', { class: 'notice is-bad' }, el('p', {}, blockedReason)))
@@ -186,6 +200,8 @@ export const homeScreen: Screen = (root, nav) => {
   function availableProcedures(): { id: string; label: string; seconds: number }[] {
     const list: { id: string; label: string; seconds: number }[] = [...DAILY_PROTOCOL]
     if (jumpDuctionsUnlocked()) list.push(JUMP_DUCTIONS)
+    // Experimental, ungated, self-guided only — deliberately not in DAILY_PROTOCOL.
+    list.push(CYCLOPEAN_LETTERS)
     return list
   }
 

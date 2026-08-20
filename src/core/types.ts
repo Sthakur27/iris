@@ -7,6 +7,7 @@ export type ProcedureId =
   | 'convergence'
   | 'accommodativeRock'
   | 'jumpDuctions'
+  | 'cyclopeanLetters'
 
 /** Screen + posture calibration. Everything that converts pixels to clinical units. */
 export interface Calibration {

@@ -77,6 +77,17 @@ export const DAILY_PROTOCOL: { id: ProcedureId; label: string; seconds: number }
 /** Jump Ductions is gated behind Convergence and Divergence, exactly as HTS gates it. */
 export const JUMP_DUCTIONS = { id: 'jumpDuctions' as const, label: 'Jump Ductions', seconds: 420 }
 
+/**
+ * Cyclopean Letters is experimental and self-guided only: it is not part of HTS's
+ * protocol, so it never joins DAILY_PROTOCOL, but it is not gated either — its whole
+ * failure mode (seeing only noise) is safe and self-explanatory.
+ */
+export const CYCLOPEAN_LETTERS = {
+  id: 'cyclopeanLetters' as const,
+  label: 'Cyclopean Letters',
+  seconds: 300,
+}
+
 const SETTINGS_KEY = 'iris.settings.v1'
 const SESSIONS_KEY = 'iris.sessions.v1'
 

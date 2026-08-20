@@ -1,9 +1,10 @@
 import type { EyeSide } from '../core/types'
 import type { Procedure, ProcedureContext } from './base'
 import type { IntegrityTrial, ResponseKind } from '../core/integrity'
-import { FatigueMonitor, createElapsedClock, visibleTimeout } from './base'
+import { FatigueMonitor, createElapsedClock } from './base'
 import { CATCH_TRIAL_RATE, IntegrityMonitor, MIN_PLAUSIBLE_LATENCY_MS } from '../core/integrity'
 import { drawLandoltC } from '../core/anaglyph'
+import { createStagePlacement, loadStoredScale, saveStoredScale } from './stagePlacement'
 import { el } from '../ui/router'
 
 /**
@@ -19,9 +20,9 @@ import { el } from '../ui/router'
  * What HTS gets right: the colour/flipper construction, and the row of four.
  * What it gets wrong, and this file fixes:
  *
- *  - The flip itself is the exercise, and HTS makes it easy to miss. Here every
- *    colour change is a full-screen cue with a mandatory beat before the first C,
- *    so an answer cannot arrive from a row the user never re-focused for.
+ *  - Rows change colour instantly, as in HTS: the colour change itself is the cue
+ *    to flip the lens, marked only by a tone. A full-screen beat interrupts solely
+ *    for a flipper swap (level change) and the very first row.
  *  - HTS's own manual warns the flipper must be held with the number toward the
  *    patient. Held backwards, the entire session trains the wrong power and
  *    nothing in the software notices. So the level and its orientation are on
@@ -33,9 +34,6 @@ import { el } from '../ui/router'
  *    took to refocus through the new lens, i.e. the latency of the FIRST C after
  *    each colour change. Cs two through four are reading speed. HTS records
  *    neither separately; we tag the first-of-row trials so they can be pulled out.
- *  - Suppression — the brain switching one eye off — produces a single clear image
- *    and a user who feels successful while one eye does nothing. It is the most
- *    important silent failure here, so monocular probes run throughout.
  */
 
 type Direction = 'up' | 'down' | 'left' | 'right'
@@ -46,26 +44,21 @@ const DIRECTIONS: readonly Direction[] = ['up', 'down', 'left', 'right'] as cons
 const RED = '#ff2b2b'
 const BLUE = '#2b6bff'
 
+/** What an already-answered target (or the filler symbol after it) turns to. */
+const ANSWERED_COLOUR = '#c7d2de'
+
+/**
+ * Non-interactive glyphs drawn between the four targets, matching HTS's row layout.
+ * Fixed order, never randomised — HTS reuses the same three symbols every row.
+ */
+const FILLER_SYMBOLS = ['*', '#', '$'] as const
+
 type RowColour = 'red' | 'blue'
 
 const ROW_LENGTH = 4
 
-/** A rep that gets no response at all is scored as "couldn't read it", never as wrong. */
-const RESPONSE_TIMEOUT_MS = 12_000
-
-/**
- * The mandatory beat between the FLIP cue and the first C of the new row. Long
- * enough that the hand has to have moved: if the row appeared instantly the user
- * could answer from the previous row's lens and still produce clean-looking data.
- */
+/** How long the READY cue (first row only) holds the screen. */
 const FLIP_CUE_MS = 1300
-const LEVEL_CHANGE_CUE_MS = 3000
-
-/** Roughly every ten answered reps, one monocular suppression probe. */
-const PROBE_EVERY_TRIALS = 10
-
-/** Consecutive probe misses on one eye before we say the word "suppression". */
-const SUPPRESSION_ALARM_MISSES = 3
 
 interface Response {
   kind: ResponseKind
@@ -143,21 +136,25 @@ function linger(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
-function waitForResponse(
-  onset: number,
-  timeoutMs: number,
-  signal: AbortSignal,
-): Promise<Response | null> {
+/**
+ * Waits for a key, for as long as it takes. There is no timeout: a target that has
+ * not been answered simply stays on screen, and only the user moves things forward.
+ * SPACE remains the honest way to say a gap will not clear.
+ */
+function waitForResponse(onset: number, signal: AbortSignal): Promise<Response | null> {
   return new Promise((resolve) => {
     const finish = (r: Response | null): void => {
       window.removeEventListener('keydown', onKey)
       signal.removeEventListener('abort', onAbort)
-      cancelTimer()
       resolve(r)
     }
 
     const onKey = (e: KeyboardEvent): void => {
       if (e.repeat) return
+      // Keystrokes aimed at a control on the stage — the size slider or the auto
+      // toggle — are not answers. Space especially: it is both the honest "too
+      // blurred" key and the key that activates a focused checkbox.
+      if (e.target instanceof HTMLInputElement) return
       const latencyMs = performance.now() - onset
 
       if (e.key === ' ' || e.code === 'Space') {
@@ -183,12 +180,6 @@ function waitForResponse(
     }
 
     const onAbort = (): void => finish(null)
-
-    // Blur that never clears is honest data, not a failure: record it as "can't read it".
-    const cancelTimer = visibleTimeout(
-      () => finish({ kind: 'cannotSee', direction: null, latencyMs: timeoutMs }),
-      timeoutMs,
-    )
 
     window.addEventListener('keydown', onKey)
     signal.addEventListener('abort', onAbort, { once: true })
@@ -310,17 +301,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
   const canvas = el('canvas')
   canvasWrap.append(canvas)
 
-  // The flipper-orientation cue. HTS buries this in a paper manual; a flipper held
-  // backwards trains the opposite power and nothing downstream can detect it.
-  const holdCue = el('div')
-  holdCue.style.cssText =
-    'position:fixed;top:34px;left:0;right:0;text-align:center;font-size:19px;' +
-    'font-weight:600;letter-spacing:0.02em;color:#c7d2de'
-  const holdSub = el('div')
-  holdSub.style.cssText = 'font-size:13px;font-weight:400;color:#6d7886;margin-top:4px'
-  holdCue.append(holdSub)
-
-  // The flip cue. Full width, unmissable, and it owns the screen for its whole beat.
+  // The READY cue. Full width, unmissable, and it owns the screen for its whole beat.
   const flipCue = el('div')
   flipCue.style.cssText =
     'position:fixed;inset:0;display:none;flex-direction:column;align-items:center;' +
@@ -332,17 +313,36 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
   flipCue.append(flipWord, flipNote)
 
   const hud = el('div', { class: 'stage-hud' })
-  const hudLevel = el('span')
-  const hudWarning = el('span', { class: 'warn' })
   const hudClock = el('span')
-  hud.append(hudLevel, hudWarning, hudClock)
+  hud.append(hudClock)
 
   const prompt = el('div', { class: 'stage-prompt' })
   const promptMain = el('div')
   const promptNote = el('div', { class: 'muted' })
   prompt.append(promptMain, promptNote)
 
-  stage.append(canvasWrap, holdCue, flipCue, hud, prompt)
+  // Size control. Remembered across sessions: the right size for a screen and a
+  // chair does not change day to day, so it should not need re-finding.
+  let sizeScale = loadStoredScale(SIZE_SCALE_KEY)
+  const sizeSlider = el('input', {
+    type: 'range',
+    min: '0.5',
+    max: '2',
+    step: '0.05',
+    value: String(sizeScale),
+  })
+  sizeSlider.style.cssText = 'width:140px;accent-color:#8b97a6'
+  const sizeLabel = el('label')
+  sizeLabel.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer'
+  sizeLabel.append('size', sizeSlider)
+  // The row also hosts the auto-relocation toggle, appended once it exists below.
+  const sizeWrap = el('div')
+  sizeWrap.style.cssText =
+    'position:fixed;left:18px;bottom:16px;display:flex;align-items:center;gap:14px;' +
+    'font-size:12px;color:#6d7886;z-index:1'
+  sizeWrap.append(sizeLabel)
+
+  stage.append(canvasWrap, flipCue, hud, prompt, sizeWrap)
   ctx.root.append(stage)
 
   const feedback = new Feedback()
@@ -351,22 +351,47 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
   const fatigue = new FatigueMonitor()
 
   // --- State ---------------------------------------------------------------
-  let layout = rowLayout()
-  let levelIndex = 0
+  let layout = rowLayout(sizeScale)
   let rowIndex = 0
-  let answered = 0
-  let nextProbeAt = PROBE_EVERY_TRIALS
-  let probeEye: EyeSide = redEye
-  const probeHits: Record<EyeSide, number> = { left: 0, right: 0 }
-  const probeMisses: Record<EyeSide, number> = { left: 0, right: 0 }
-  const consecutiveMisses: Record<EyeSide, number> = { left: 0, right: 0 }
-  let suppressionFlagged: EyeSide | null = null
+  /** Whatever is on the canvas right now, so a size change can repaint it in place. */
+  let painted: { row: RowSpec; activeIndex: number } | null = null
   const recorded: RockTrial[] = []
 
+  const placement = createStagePlacement({
+    procedureId: accommodativeRock.id,
+    stage,
+    target: canvasWrap,
+    // The flipper is held on-axis toward the screen centre; looking through the
+    // lens off-axis induces prism (Prentice's rule) that contaminates the
+    // accommodative demand, so rock offsets stay modest.
+    maxFraction: 0.18,
+    downBias: false,
+    elemSize: () => ({ w: layout.width, h: layout.height }),
+    // A jitter change means a new row layout, and the repaint path is onResize.
+    onChange: () => onResize(),
+  })
+  sizeWrap.append(placement.autoToggle)
+
+  /** The slider's scale, wobbled by auto mode, still bounded by the slider's range. */
+  const effectiveScale = (): number =>
+    Math.min(2, Math.max(0.5, sizeScale * placement.sizeJitter()))
+
   const onResize = (): void => {
-    layout = rowLayout()
+    layout = rowLayout(effectiveScale())
+    placement.apply()
+    if (painted) paintRow(canvas, layout, painted.row, painted.activeIndex)
   }
   window.addEventListener('resize', onResize)
+  placement.apply()
+
+  sizeSlider.addEventListener('input', () => {
+    sizeScale = Number(sizeSlider.value) || 1
+    saveStoredScale(SIZE_SCALE_KEY, sizeScale)
+    onResize()
+  })
+  // The arrow keys are the answer channel. A slider that kept focus after being
+  // dragged would keep eating them as adjustments, so it lets go on commit.
+  sizeSlider.addEventListener('change', () => sizeSlider.blur())
 
   /**
    * Therapy actually done: stops for hidden tabs and for pauses, like the session clock.
@@ -376,35 +401,16 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
   const elapsed = createElapsedClock()
   const clock = window.setInterval(() => paintClock(), 500)
 
-  function currentLevel(): { level: number; rightEyeD: number; leftEyeD: number } {
-    return levels[levelIndex] ?? { level: 1, rightEyeD: 0, leftEyeD: 0 }
-  }
+  // The level is fixed for the whole session — named once in the READY cue, never
+  // shown or changed while the exercise runs, matching HTS.
+  const level = levels[0] ?? { level: 1, rightEyeD: 0, leftEyeD: 0 }
 
   function powerFor(eye: EyeSide): number {
-    const l = currentLevel()
-    return eye === 'right' ? l.rightEyeD : l.leftEyeD
+    return eye === 'right' ? level.rightEyeD : level.leftEyeD
   }
 
   function paintClock(): void {
     hudClock.textContent = `${elapsed.format()} elapsed`
-  }
-
-  function paintHud(): void {
-    const l = currentLevel()
-    hudLevel.textContent =
-      `flipper level ${l.level} · R ${formatD(l.rightEyeD)} · L ${formatD(l.leftEyeD)}`
-    hudWarning.textContent = suppressionFlagged
-      ? `${suppressionFlagged} eye is missing the monocular probe`
-      : ''
-  }
-
-  function paintHoldCue(): void {
-    const l = currentLevel()
-    holdCue.textContent = `Hold LEVEL ${l.level} — number facing you`
-    holdSub.textContent =
-      `right eye ${formatD(l.rightEyeD)} · left eye ${formatD(l.leftEyeD)} · ` +
-      `red reaches your ${redEye} eye`
-    holdCue.append(holdSub)
   }
 
   function setPrompt(note = ''): void {
@@ -413,9 +419,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
     promptNote.textContent = note
   }
 
-  paintHud()
   paintClock()
-  paintHoldCue()
   setPrompt()
 
   try {
@@ -426,15 +430,12 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
       // Red light passes the red filter, so a red row reaches the red-filtered eye only.
       const eye: EyeSide = colour === 'red' ? redEye : other(redEye)
 
-      // A level change means physically picking up a different flipper, so it can only
-      // happen at a cycle boundary (start of a red row), never mid-cycle.
-      let levelChanged = false
-      if (colour === 'red' && rowIndex > 0) {
-        levelChanged = applyLevelRecommendation()
-      }
-
-      await showFlipCue(colour, eye, { levelChanged, first: rowIndex === 0 })
+      await showFlipCue(colour, eye, { first: rowIndex === 0 })
       if (signal.aborted) break
+
+      // Auto relocation lands only on row boundaries: the user reads the four Cs
+      // left to right, and a mid-row move measures confusion, not re-fusion.
+      if (placement.jumpDue()) placement.jump()
 
       const row = buildRow(colour, eye)
       let abandoned = false
@@ -443,6 +444,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
         const direction = row.directions[i]
         if (!direction) continue
 
+        painted = { row, activeIndex: i }
         paintRow(canvas, layout, row, i)
         const onset = await afterPaint(signal)
         if (signal.aborted) {
@@ -450,7 +452,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
           break
         }
 
-        const response = await waitForResponse(onset, RESPONSE_TIMEOUT_MS, signal)
+        const response = await waitForResponse(onset, signal)
         if (!response) {
           stopped = true
           break
@@ -491,7 +493,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
         const trial: RockTrial = {
           index: recorded.length,
           // Rock is scored in flipper levels, per the core `Trial` contract.
-          demand: currentLevel().level,
+          demand: level.level,
           eye,
           correct,
           latencyMs: Math.round(response.latencyMs),
@@ -507,7 +509,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
         monitor.push(trial)
         fatigue.push(trial)
         ctx.onTrial(trial)
-        answered += 1
+        placement.answered()
 
         // --- Feedback ----------------------------------------------------
         const centre = cCentre(layout, i)
@@ -549,12 +551,6 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
 
       if (stopped || signal.aborted) break
       rowIndex += 1
-
-      if (answered >= nextProbeAt) {
-        await runSuppressionProbe()
-        nextProbeAt = answered + PROBE_EVERY_TRIALS
-        if (signal.aborted) break
-      }
     }
 
     await showSummary()
@@ -589,134 +585,32 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
   async function showFlipCue(
     colour: RowColour,
     eye: EyeSide,
-    opts: { levelChanged: boolean; first: boolean },
+    opts: { first: boolean },
   ): Promise<void> {
-    const tint = colour === 'red' ? RED : BLUE
-    canvasWrap.style.opacity = '0'
-    flipCue.style.display = 'flex'
-    flipWord.style.color = opts.levelChanged ? '#e6eaef' : tint
-
-    if (opts.levelChanged) {
-      const l = currentLevel()
-      flipWord.textContent = `LEVEL ${l.level}`
-      flipNote.textContent =
-        `Swap to the level ${l.level} flipper — right ${formatD(l.rightEyeD)}, left ${formatD(l.leftEyeD)}. ` +
-        `Number facing you. Then hold it up for the ${colour} row.`
-    } else if (opts.first) {
-      flipWord.textContent = 'READY'
-      flipNote.textContent =
-        `Flipper up, number facing you. The ${colour} row trains your ${eye} eye.`
-    } else {
-      flipWord.textContent = 'FLIP'
-      flipNote.textContent = `${colour.toUpperCase()} row — your ${eye} eye. Flip the lens now.`
+    // An ordinary colour change gets no cue at all, matching HTS: the row simply
+    // switches, and the colour itself is the signal to flip the lens. Only the very
+    // first row gets a full-screen beat, which is also where the flipper level for
+    // the whole session is named.
+    if (!opts.first) {
+      feedback.tone('flip')
+      return
     }
 
+    canvasWrap.style.opacity = '0'
+    flipCue.style.display = 'flex'
+    flipWord.style.color = colour === 'red' ? RED : BLUE
+    flipWord.textContent = 'READY'
+    flipNote.textContent =
+      `Use the level ${level.level} flipper — right ${formatD(level.rightEyeD)}, ` +
+      `left ${formatD(level.leftEyeD)}, number facing you. ` +
+      `The ${colour} row trains your ${eye} eye.`
+
     feedback.tone('flip')
-    await sleep(opts.levelChanged ? LEVEL_CHANGE_CUE_MS : FLIP_CUE_MS, signal)
+    await sleep(FLIP_CUE_MS, signal)
 
     flipCue.style.display = 'none'
     canvasWrap.style.opacity = '1'
-    paintHud()
-    paintHoldCue()
     setPrompt()
-  }
-
-  /* ------------------------------------------------------------- adaptation */
-
-  /**
-   * Level control comes from the integrity monitor, not from HTS's star gates:
-   * accuracy alone floors at 25% in a 4AFC task, so on its own it cannot tell a
-   * cleared lens from a lucky guess. The prescribed accuracy goal is an extra
-   * gate on stepping up, never a reason to step down on its own.
-   */
-  function applyLevelRecommendation(): boolean {
-    const previous = levelIndex
-    const recommendation = monitor.recommendation()
-    const verdict = monitor.verdict()
-    const summary = monitor.summary()
-    const accuracy = summary.valid > 0 ? summary.correct / summary.valid : 0
-
-    if (recommendation === 'increase' && !verdict.atChance && accuracy >= goalAccuracy) {
-      levelIndex = Math.min(levels.length - 1, levelIndex + 1)
-    } else if (recommendation === 'decrease') {
-      levelIndex = Math.max(0, levelIndex - 1)
-    }
-
-    if (levelIndex !== previous) {
-      // The evidence was about the old lens power; it says nothing about the new one.
-      monitor.reset()
-      paintHud()
-      paintHoldCue()
-      return true
-    }
-    return false
-  }
-
-  /* ------------------------------------------------------- suppression probe */
-
-  /**
-   * A mark rendered into one anaglyph channel only. The eye behind the other filter
-   * cannot see it at all, so a miss means that eye's input is not reaching awareness.
-   *
-   * The mark is a large solid block rather than a fine detail on purpose: through a
-   * strong flipper lens a fine target would be missed for optical reasons, and we
-   * would call blur "suppression". A blurred block is still a visible blob in a
-   * reportable position.
-   */
-  async function runSuppressionProbe(): Promise<void> {
-    const eye = probeEye
-    probeEye = other(probeEye)
-
-    const positionIndex = Math.floor(Math.random() * DIRECTIONS.length)
-    const position = DIRECTIONS[positionIndex] ?? 'up'
-    const colour = eye === redEye ? RED : BLUE
-
-    canvasWrap.style.opacity = '1'
-    paintProbe(canvas, layout, position, colour)
-    promptMain.textContent = 'Where is the block?  Arrow key.  SPACE if you cannot see it at all.'
-    promptNote.textContent = 'Eye check — keep the flipper exactly where it is.'
-
-    const onset = await afterPaint(signal)
-    if (signal.aborted) return
-    const response = await waitForResponse(onset, RESPONSE_TIMEOUT_MS, signal)
-    if (!response) return
-
-    const seen = response.kind === 'answer' && response.direction === position
-    if (seen) {
-      probeHits[eye] += 1
-      consecutiveMisses[eye] = 0
-      feedback.tone('correct')
-      setPrompt('Both eyes reporting.')
-    } else {
-      probeMisses[eye] += 1
-      consecutiveMisses[eye] += 1
-      feedback.tone('neutral')
-      setPrompt(`Nothing seen with the ${eye} eye that time.`)
-    }
-
-    // Probes are not therapy trials: they never enter the level ladder or the
-    // accuracy record, because scoring them would mix two different questions.
-
-    if (consecutiveMisses[eye] >= SUPPRESSION_ALARM_MISSES) {
-      suppressionFlagged = eye
-      consecutiveMisses[eye] = 0
-      levelIndex = Math.max(0, levelIndex - 1)
-      monitor.reset()
-      paintHud()
-      paintHoldCue()
-
-      flipCue.style.display = 'flex'
-      flipWord.style.color = '#d29922'
-      flipWord.textContent = 'CHECK'
-      flipNote.textContent =
-        `Your ${eye} eye missed the last ${SUPPRESSION_ALARM_MISSES} checks in a row. That usually means ` +
-        `your brain is switching that eye off — you see one clear image and feel fine while one eye does ` +
-        `nothing. Dropping to level ${currentLevel().level}. Mention this to your optometrist; it is not ` +
-        `something to push through.`
-      await sleep(6000, signal)
-      flipCue.style.display = 'none'
-      setPrompt()
-    }
   }
 
   /* ---------------------------------------------------------------- summary */
@@ -728,11 +622,10 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
    */
   async function showSummary(): Promise<void> {
     const verdict = monitor.verdict()
+    painted = null
     canvasWrap.style.display = 'none'
+    sizeWrap.style.display = 'none'
     flipCue.style.display = 'none'
-    holdCue.style.display = 'none'
-    hudLevel.textContent = ''
-    hudWarning.textContent = ''
 
     const minutes = elapsed.ms() / 60_000
     const cycles = Math.floor(rowIndex / 2)
@@ -749,13 +642,6 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
       lines.push(
         `${eye} eye: ${Math.round(accuracy * 100)}% correct (goal ${Math.round(goalAccuracy * 100)}%)` +
           (clearing === null ? '' : `, cleared the lens in about ${formatMs(clearing)}`),
-      )
-    }
-
-    if (suppressionFlagged) {
-      lines.push(
-        `Your ${suppressionFlagged} eye kept missing the monocular check ` +
-          `(${probeHits[suppressionFlagged]} seen, ${probeMisses[suppressionFlagged]} missed). Worth raising with your optometrist.`,
       )
     }
 
@@ -778,13 +664,23 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------- size scale */
+
+/** Pre-dates the shared placement helper; the key stays so saved sizes survive. */
+const SIZE_SCALE_KEY = 'iris.rockSizeScale.v1'
+
 /* ------------------------------------------------------- rendering helpers */
 
-function rowLayout(): RowLayout {
-  const size = Math.max(
+function rowLayout(scale: number): RowLayout {
+  const base = Math.max(
     34,
     Math.min(92, Math.round(Math.min(window.innerWidth / 9, window.innerHeight / 6))),
   )
+  // Whatever the slider says, the whole row must stay on screen: a clipped
+  // first or last target is unanswerable, not just ugly. Row width works out to
+  // size × (0.8×2 + 1.95×3 + 1), hence the divisor.
+  const maxSize = Math.floor((window.innerWidth - 24) / 8.45)
+  const size = Math.max(16, Math.min(maxSize, Math.round(base * scale)))
   const step = Math.round(size * 1.95)
   const margin = Math.round(size * 0.8)
   const width = margin * 2 + step * (ROW_LENGTH - 1) + size
@@ -792,11 +688,33 @@ function rowLayout(): RowLayout {
   return { size, step, margin, width, height }
 }
 
-function cCentre(layout: RowLayout, index: number): { x: number; y: number } {
+/**
+ * A row is laid out as 7 evenly-spaced slots — target, filler, target, filler,
+ * target, filler, target — so a filler always sits exactly halfway between the two
+ * targets flanking it. `layout.step` is still the target-to-target distance, so the
+ * row's overall width is unchanged from a 4-target-only layout.
+ */
+function slotCentre(layout: RowLayout, slotIndex: number): { x: number; y: number } {
   return {
-    x: layout.margin + layout.size / 2 + index * layout.step,
+    x: layout.margin + layout.size / 2 + (slotIndex * layout.step) / 2,
     y: Math.round(layout.height / 2),
   }
+}
+
+function cCentre(layout: RowLayout, index: number): { x: number; y: number } {
+  return slotCentre(layout, index * 2)
+}
+
+function fillerCentre(layout: RowLayout, index: number): { x: number; y: number } {
+  return slotCentre(layout, index * 2 + 1)
+}
+
+function drawBox(g: CanvasRenderingContext2D, x: number, y: number, size: number, colour: string): void {
+  g.save()
+  g.strokeStyle = colour
+  g.lineWidth = Math.max(1.5, size / 18)
+  g.strokeRect(x - size / 2, y - size / 2, size, size)
+  g.restore()
 }
 
 function paintRow(
@@ -818,15 +736,18 @@ function paintRow(
     if (!direction) continue
     const centre = cCentre(layout, i)
 
-    // Answered Cs stay on screen but recede, so the row still reads as a row while
-    // the eye is pulled to the next one.
-    g.globalAlpha = i < activeIndex ? 0.18 : 1
+    // An answered target turns fully neutral rather than just fading, so the row
+    // reads as "done so far" at a glance instead of a fainter version of itself.
+    const shade = i < activeIndex ? ANSWERED_COLOUR : colour
+    // The glyph is drawn smaller than its box so the box outline stays visible as a
+    // frame around it, rather than being swallowed by the ring's own stroke width.
+    const glyphSize = layout.size * 0.62
+    drawBox(g, centre.x, centre.y, layout.size, shade)
     if (row.catches[i] === true) {
-      drawUnresolvableC(g, centre.x, centre.y, layout.size, colour, row.catchRotations[i] ?? 0)
+      drawUnresolvableC(g, centre.x, centre.y, glyphSize, shade, row.catchRotations[i] ?? 0)
     } else {
-      drawLandoltC(g, centre.x, centre.y, layout.size, direction, colour)
+      drawLandoltC(g, centre.x, centre.y, glyphSize, direction, shade)
     }
-    g.globalAlpha = 1
 
     if (i === activeIndex) {
       // Marker in the same channel as the row, so it reaches the same single eye.
@@ -841,6 +762,19 @@ function paintRow(
       g.stroke()
       g.restore()
     }
+  }
+
+  // Purely decorative filler between the targets, matching HTS's row density. Never
+  // a response target — its "done" state just tracks the target immediately before it.
+  g.textAlign = 'center'
+  g.textBaseline = 'middle'
+  g.font = `${Math.round(layout.size * 0.5)}px sans-serif`
+  for (let f = 0; f < FILLER_SYMBOLS.length; f++) {
+    const symbol = FILLER_SYMBOLS[f]
+    if (!symbol) continue
+    const centre = fillerCentre(layout, f)
+    g.fillStyle = f < activeIndex ? ANSWERED_COLOUR : colour
+    g.fillText(symbol, centre.x, centre.y)
   }
 }
 
@@ -865,39 +799,6 @@ function drawUnresolvableC(
   g.arc(x, y, size / 2, rotation + gapAngle / 2, rotation - gapAngle / 2 + Math.PI * 2)
   g.stroke()
   g.restore()
-}
-
-function paintProbe(
-  canvas: HTMLCanvasElement,
-  layout: RowLayout,
-  position: Direction,
-  colour: string,
-): void {
-  canvas.width = layout.width
-  canvas.height = layout.height
-  const g = canvas.getContext('2d')
-  if (!g) return
-
-  const cx = layout.width / 2
-  const cy = layout.height / 2
-  const offset = Math.min(layout.height, layout.width) * 0.3
-  const block = Math.round(layout.size * 0.55)
-  const at: Record<Direction, { x: number; y: number }> = {
-    up: { x: cx, y: cy - offset },
-    down: { x: cx, y: cy + offset },
-    left: { x: cx - offset * 2, y: cy },
-    right: { x: cx + offset * 2, y: cy },
-  }
-  const p = at[position]
-
-  g.clearRect(0, 0, layout.width, layout.height)
-  g.fillStyle = colour
-  g.fillRect(p.x - block / 2, p.y - block / 2, block, block)
-
-  // A faint centre mark in the same channel, so there is something to fixate.
-  g.globalAlpha = 0.4
-  g.fillRect(cx - 2, cy - 2, 4, 4)
-  g.globalAlpha = 1
 }
 
 /* ------------------------------------------------------------------ utils */

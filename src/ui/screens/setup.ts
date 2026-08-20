@@ -10,7 +10,6 @@
 
 import { el } from '../router'
 import type { Screen } from '../router'
-import { createDepthCheck } from '../anaglyphDepthCheck'
 import { CREDIT_CARD_WIDTH_CM } from '../../core/geometry'
 import {
   describeDistance,
@@ -48,7 +47,11 @@ const ORIENTATION_PROOF_KEY = 'iris.orientationProof.v1'
 
 interface OrientationProof {
   redEye: EyeSide
-  /** True only when the user demonstrated it on the stereo check, not merely agreed to it. */
+  /**
+   * Whether the orientation was demonstrated rather than merely stated. Setup no
+   * longer includes a stereo verification, so new stamps are always unverified;
+   * the field is kept so older, verified stamps still parse the same way.
+   */
   verified: boolean
   at: number
 }
@@ -413,32 +416,27 @@ export const setupScreen: Screen = (root, nav) => {
   /* ------------------------------------------------------------- step 3 */
 
   /**
-   * Orientation is fixed and taught, then demonstrated.
+   * Orientation is fixed and taught.
    *
-   * This used to be a two-step interactive check ("close your left eye, click the
-   * square that vanishes"), and it was the most confusing screen in the app —
-   * reasoning about which lens you are looking through is genuinely hard. Replacing
-   * it with a plain instruction fixed the confusion and lost the verification: an
-   * instruction can be misread, and a misread one inverts every exercise silently.
-   *
-   * So the two jobs are split. The ✓/✗ diagram teaches how to wear them; the depth
-   * check below it confirms that you did, by asking for something only a person
-   * wearing them the stated way round can do. Passing it is not a claim the user
-   * makes, it is a thing the user does — which is the only kind of evidence this
-   * screen can actually collect.
+   * This used to be an interactive check (first "close your left eye, click the
+   * square that vanishes", later a stereogram depth check), and each version was
+   * the most confusing screen in the app — reasoning about which lens you are
+   * looking through is genuinely hard, and plenty of people cannot fuse a stereo
+   * target at all. So the screen now only teaches: the ✓/✗ diagram shows how to
+   * wear the glasses, and Continue records the orientation as stated rather than
+   * demonstrated.
    */
   function orientationStep(): HTMLElement {
     const card = el('div', { class: 'card' })
     card.append(
       // A decorative red/blue fringe, purely as a nod to what the glasses are for.
-      // It is legible without them, and nothing on this screen except the depth
-      // check itself requires wearing them to read.
+      // It is legible without them; nothing on this screen requires wearing them to read.
       el('h2', { class: 'anaglyph-3d' }, 'Put the glasses on'),
       el(
         'p',
         {},
-        'The red lens goes over your RIGHT eye. Iris assumes that everywhere, so it is the one thing ' +
-          'you have to get right by hand — but once they are on, the app can check you got it right.',
+        'The red lens goes over your RIGHT eye. Iris assumes that everywhere, and it is the one thing ' +
+          'you have to get right by hand — the app has no way to see how the glasses sit on your face.',
       ),
       el(
         'p',
@@ -461,7 +459,6 @@ export const setupScreen: Screen = (root, nav) => {
         stat('Viewing distance', `${distanceCm} cm`),
         stat('Red lens', 'right eye'),
       ),
-      depthCheckBlock(),
       el(
         'p',
         { class: 'gloss' },
@@ -477,72 +474,19 @@ export const setupScreen: Screen = (root, nav) => {
       render()
     })
 
-    card.append(el('div', { class: 'actions' }, back))
+    const next = el('button', { class: 'primary' }, 'Continue')
+    next.addEventListener('click', () => finish())
+
+    card.append(el('div', { class: 'actions' }, back, next))
     return card
   }
 
   /**
-   * The confirm control, drawn in stereo.
-   *
-   * There is deliberately no ordinary "Save calibration" button on this step. The
-   * whole point is that finishing the wizard should require the thing the wizard
-   * cannot otherwise establish, so the act of finishing *is* the proof: clicking the
-   * square that stands out of the screen is the only path through, apart from the
-   * clearly-labelled escape below it.
+   * Writes the calibration and leaves. The orientation is stored as unverified
+   * because the user was told where the red lens goes, not shown to have put it
+   * there — a stated orientation, not a demonstrated one.
    */
-  function depthCheckBlock(): HTMLElement {
-    const block = el('div', { class: 'card depth-block' })
-
-    const escape = el('button', {}, 'I cannot see any depth — save without checking')
-    escape.addEventListener('click', () => finish(false))
-
-    block.append(
-      el('h3', {}, 'Now show the glasses are on the right way round'),
-      el(
-        'p',
-        {},
-        'Four patches of red and blue speckle, each hiding a square. With the glasses on, three of the ' +
-          'squares sit behind the speckle and one floats out in front of it, towards your face. Click ' +
-          'the one in front. Two correct picks in a row saves your calibration and finishes setup.',
-      ),
-      el(
-        'p',
-        { class: 'warn' },
-        'If three of them look like they are floating towards you and only one sinks away, your ' +
-          'glasses are on the wrong way round. Turn them over — that alone is worth the check.',
-      ),
-      el(
-        'p',
-        { class: 'gloss' },
-        'Without the glasses these are just noise. The squares are not drawn into the picture at all; ' +
-          'they exist only in the difference between what each eye is sent — a random-dot stereogram, ' +
-          'a picture whose content lives in that difference and nowhere else. So this is not something ' +
-          'you can reason your way through, only see: passing it is the proof, and it is proof of both ' +
-          'facts at once, that the glasses are on and that they are on the right way round.',
-      ),
-      createDepthCheck({
-        cal: { pxPerCm, viewingDistanceCm: distanceCm, redEye: RED_EYE },
-        onVerified: () => finish(true),
-      }),
-      el('div', { class: 'depth-escape' }, escape),
-      el(
-        'p',
-        { class: 'gloss' },
-        'Some people cannot fuse a stereo target at all, and that must not lock you out of your own ' +
-          'setup. Taking the escape records the red lens as being over your right eye because you were ' +
-          'told to put it there, not because you showed that it is — it is stored as unverified. If it ' +
-          'is in fact the other way round, every vergence exercise will train the opposite of what it ' +
-          'says it is training, so check the diagram once more before using it.',
-      ),
-    )
-    return block
-  }
-
-  /**
-   * Writes the calibration and leaves. `verified` is the difference between a
-   * demonstrated orientation and a stated one, and is recorded as such.
-   */
-  function finish(verified: boolean): void {
+  function finish(): void {
     saveSettings({
       ...settings,
       preferredUnit,
@@ -552,7 +496,7 @@ export const setupScreen: Screen = (root, nav) => {
         redEye: RED_EYE,
       },
     })
-    const proof: OrientationProof = { redEye: RED_EYE, verified, at: Date.now() }
+    const proof: OrientationProof = { redEye: RED_EYE, verified: false, at: Date.now() }
     localStorage.setItem(ORIENTATION_PROOF_KEY, JSON.stringify(proof))
     nav.go('home')
   }

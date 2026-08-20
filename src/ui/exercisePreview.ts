@@ -15,6 +15,7 @@
 
 import { el } from './router'
 import { drawLandoltC, renderRds } from '../core/anaglyph'
+import { rasterizeLetterMask, renderMaskedRds } from '../core/rdsMask'
 import { planStereoField, prismDioptresToPx } from '../core/geometry'
 import type { Calibration, ProcedureId, Settings } from '../core/types'
 
@@ -49,6 +50,7 @@ const PROCEDURE_IDS: readonly ProcedureId[] = [
   'convergence',
   'accommodativeRock',
   'jumpDuctions',
+  'cyclopeanLetters',
 ]
 
 /** `SessionRequest.procedureId` is a bare string, so it has to be re-checked here. */
@@ -177,6 +179,23 @@ function copyFor(id: ProcedureId): Copy {
           { key: 'Space', means: spaceMeans },
         ],
       }
+
+    case 'cyclopeanLetters':
+      return {
+        stimulus:
+          'A field of red and blue speckle that constantly churns, with one large letter floating out of it ' +
+          '— but the letter exists only in the depth between the two eyes’ views. Neither eye alone is shown ' +
+          'any letter shape at all: close one eye and there is genuinely nothing there but noise.',
+        task:
+          'Let the field settle, wait for the letter to float clear of the noise, and type it. The two views ' +
+          'are pulled apart so your eyes have to turn inward to hold the letter together, exactly as in ' +
+          'Convergence. Seeing only noise is a real and useful answer, not a failure — it is what suppression ' +
+          'looks like from the inside.',
+        keys: [
+          { key: 'A–Z', means: 'Type the letter you see floating in the noise.' },
+          { key: 'Space', means: `I see only noise. ${spaceRest}` },
+        ],
+      }
   }
 }
 
@@ -227,6 +246,16 @@ function draw(id: ProcedureId, cal: Calibration): Drawn {
           'Both rows are shown together here so the colour change is visible. In the exercise they come one ' +
           'after the other, at the size the exercise picks. Nothing is being measured here.',
       }
+    case 'cyclopeanLetters': {
+      const shownPd = paintCyclopeanLetter(canvas, cal)
+      return {
+        canvas,
+        caveat:
+          `Drawn at about ${shownPd.toFixed(1)}Δ, far gentler than the exercise starts at, and frozen — in ` +
+          'the exercise the speckle churns continuously, which is what keeps the letter invisible to either ' +
+          'eye alone. Without the glasses this is just noise; there is no letter printed anywhere in it.',
+      }
+    }
   }
 }
 
@@ -264,6 +293,39 @@ function paintStereogram(canvas: HTMLCanvasElement, sign: 1 | -1, cal: Calibrati
       sizePx,
       popPx,
     },
+    redEye: cal.redEye,
+    seed: 20_240_611,
+  })
+  return shownPd
+}
+
+/**
+ * A real cyclopean letter at a token demand: the same masked renderer the procedure
+ * uses, one glyph from its alphabet, frozen at a fixed seed for the reason the other
+ * stereogram preview is. Returns the demand actually drawn.
+ */
+function paintCyclopeanLetter(canvas: HTMLCanvasElement, cal: Calibration): number {
+  const popPx = Math.max(6, Math.min(20, Math.round(prismDioptresToPx(0.5, cal))))
+  const plan = planStereoField({
+    usableWidthPx: PREVIEW_WIDTH_PX,
+    minFieldWidthPx: Math.round(PREVIEW_HEIGHT_PX * 1.8),
+    extraPx: popPx + 2 * DOT_PX + 2,
+    goalPd: PREVIEW_DEMAND_PD,
+    cal,
+  })
+  const shownPd = Math.min(PREVIEW_DEMAND_PD, plan.ceilingPd)
+
+  renderMaskedRds(canvas, {
+    fieldW: plan.fieldWidthPx,
+    fieldH: PREVIEW_HEIGHT_PX,
+    dotPx: DOT_PX,
+    density: DOT_DENSITY,
+    baseDisparityPx: prismDioptresToPx(shownPd, cal),
+    popPx,
+    mask: rasterizeLetterMask('E', plan.fieldWidthPx, PREVIEW_HEIGHT_PX, {
+      heightFraction: 0.62,
+      dilatePx: popPx / 2,
+    }),
     redEye: cal.redEye,
     seed: 20_240_611,
   })

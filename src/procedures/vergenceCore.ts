@@ -6,6 +6,7 @@ import { FatigueMonitor, createElapsedClock, visibleTimeout } from './base'
 import { CATCH_TRIAL_RATE, IntegrityMonitor, MIN_PLAUSIBLE_LATENCY_MS } from '../core/integrity'
 import { planStereoField, prismDioptresToPx } from '../core/geometry'
 import { renderFlatFusion, renderRds } from '../core/anaglyph'
+import { createStagePlacement, loadStoredScale, saveStoredScale } from './stagePlacement'
 import { el } from '../ui/router'
 
 /**
@@ -67,6 +68,12 @@ const DOT_DENSITY = 0.5
 
 /** Breathing room kept between the widest eye view and the edge of the window. */
 const STAGE_GUTTER_PX = 24
+
+/**
+ * One target-size scale for the whole vergence family: the engine is shared and
+ * the size is a property of the screen and the chair, not of the demand schedule.
+ */
+const SIZE_SCALE_KEY = 'iris.vergenceSizeScale.v1'
 
 /** Smallest field worth drawing on either axis — below this the dots stop being a field. */
 const MIN_FIELD_PX = 160
@@ -447,7 +454,27 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
   const promptNote = el('div', { class: 'muted' })
   prompt.append(promptMain, promptNote)
 
-  stage.append(canvasWrap, restDot, hud, prompt)
+  // Size control for the target square, mirroring Rock's slider. Bottom-right,
+  // because the advanced-mode demand panel already owns the bottom-left corner.
+  let sizeScale = loadStoredScale(SIZE_SCALE_KEY)
+  const sizeSlider = el('input', {
+    type: 'range',
+    min: '0.5',
+    max: '2',
+    step: '0.05',
+    value: String(sizeScale),
+  })
+  sizeSlider.style.cssText = 'width:140px;accent-color:#8b97a6'
+  const sizeLabel = el('label')
+  sizeLabel.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer'
+  sizeLabel.append('size', sizeSlider)
+  const controlsWrap = el('div')
+  controlsWrap.style.cssText =
+    'position:fixed;right:18px;bottom:16px;display:flex;align-items:center;gap:14px;' +
+    'font-size:12px;color:#6d7886;z-index:1'
+  controlsWrap.append(sizeLabel)
+
+  stage.append(canvasWrap, restDot, hud, prompt, controlsWrap)
   ctx.root.append(stage)
 
   const feedback = new Feedback()
@@ -496,11 +523,40 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       magnitude,
       manual?.engaged() === true ? Math.max(FLOOR_PD, field.ceilingPd) : reachableGoal(),
     )
+    placement.apply()
     paintHud()
   }
   window.addEventListener('resize', onResize)
 
   const reachableGoal = (): number => Math.max(FLOOR_PD, Math.min(goalPd, field.ceilingPd))
+
+  const placement = createStagePlacement({
+    procedureId: spec.id,
+    stage,
+    target: canvasWrap,
+    // Vergence targets can roam: the fusional demand is carried by disparity, not
+    // by where the field sits on the screen.
+    maxFraction: 0.4,
+    downBias: true,
+    elemSize: () => ({ w: canvas.width, h: canvas.height }),
+    // A jitter change resizes the target; if one is on screen it must follow now.
+    onChange: () => {
+      if (live.onScreen) paintStimulus()
+    },
+  })
+  controlsWrap.append(placement.autoToggle)
+
+  /** The slider's scale, wobbled by auto mode, still bounded by the slider's range. */
+  const targetScale = (): number =>
+    Math.min(2, Math.max(0.5, sizeScale * placement.sizeJitter()))
+
+  sizeSlider.addEventListener('input', () => {
+    sizeScale = Number(sizeSlider.value) || 1
+    saveStoredScale(SIZE_SCALE_KEY, sizeScale)
+    if (live.onScreen) paintStimulus()
+  })
+  // Same reason as the demand slider: a control that kept focus would eat answers.
+  sizeSlider.addEventListener('change', () => sizeSlider.blur())
 
   // --- Adaptive state ------------------------------------------------------
   // Start low deliberately: the ladder should climb on evidence, not drop the user
@@ -548,16 +604,24 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
         redEye: cal.redEye,
         target: live.isCatch ? null : live.direction,
         seed: live.seed,
+        scale: targetScale(),
       })
     } else {
       paintFlat(canvas, {
-        fieldPx: field.heightPx,
+        // The flat canvas is not the stereo field, so its size is free to follow
+        // the slider; the disparity it carries is unchanged.
+        fieldPx: Math.max(
+          120,
+          Math.min(usableHeightPx(), Math.round(field.heightPx * targetScale())),
+        ),
         disparityPx,
         redEye: cal.redEye,
         oddPosition: live.dirIndex,
         neutralise: live.isCatch,
       })
     }
+    // The canvas may have changed size, so the offset re-clamps against it.
+    placement.apply()
   }
 
   // Present only in advanced mode. Off by default, and never turned on for the user.
@@ -638,6 +702,10 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
         setPrompt()
         if (signal.aborted) break
       }
+
+      // Auto relocation lands here — after the previous answer was scored, before
+      // the next target exists — so a jump can never move a target mid-judgement.
+      if (placement.jumpDue()) placement.jump()
 
       // --- Build the stimulus --------------------------------------------
       // Catch trials contain no fusible target at all. They are the only way to tell
@@ -727,6 +795,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       // the session actually went. `IntegrityTrial` extends `Trial`, so there is no
       // reason to copy fields across by hand.
       ctx.onTrial(trial)
+      placement.answered()
 
       // Hand-set reps are recorded but never scored as a level held: the metric they
       // would feed exists to say the staircase found the demand, which it did not.
@@ -832,6 +901,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     restDot.style.display = 'none'
     hudDemand.textContent = ''
     hudWarning.textContent = ''
+    controlsWrap.style.display = 'none'
     if (manual) manual.node.style.display = 'none'
 
     promptMain.textContent =
@@ -928,6 +998,7 @@ function paintRds(
     redEye: Settings['calibration']['redEye']
     target: Direction | null
     seed: number
+    scale: number
   },
 ): void {
   const { fieldW, fieldH } = opts
@@ -935,7 +1006,10 @@ function paintRds(
   // centre. The field is far wider than it is tall, so a target laid out against the
   // width would drift out towards the wings, where only one eye has field content.
   const offset = fieldH * 0.26
-  const sizePx = Math.max(24, Math.round(fieldH * 0.18))
+  // The user's size scale moves only the square, never `offset`: pushing the four
+  // positions outward would send them toward the wings the comment above avoids.
+  // At the slider's 2× ceiling the square still fits inside the field's height.
+  const sizePx = Math.max(24, Math.round(fieldH * 0.18 * opts.scale))
   const cx = fieldW / 2
   const cy = fieldH / 2
 

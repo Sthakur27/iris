@@ -6,11 +6,17 @@ import { jumpDuctions } from './jumpDuctions'
 import { accommodativeRock } from './accommodativeRock'
 import { pursuits } from './pursuits'
 import { saccades } from './saccades'
+import { cyclopeanLetters } from './cyclopeanLetters'
 
 /** Single place the session runner resolves a plan step to an implementation. */
 export const PROCEDURE_REGISTRY: Map<ProcedureId, Procedure> = new Map(
-  [convergence, divergence, jumpDuctions, accommodativeRock, pursuits, saccades].map((p) => [
-    p.id,
-    p,
-  ]),
+  [
+    convergence,
+    divergence,
+    jumpDuctions,
+    accommodativeRock,
+    pursuits,
+    saccades,
+    cyclopeanLetters,
+  ].map((p) => [p.id, p]),
 )

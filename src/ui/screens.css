@@ -72,6 +72,21 @@
   margin-bottom: 0;
 }
 
+/* Re-applied on every blocked play press, so the refusal visibly reacts to the
+   click even when the notice was already sitting on screen. */
+.notice.is-pulsing {
+  animation: notice-pulse 700ms ease-out 2;
+}
+
+@keyframes notice-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--bad) 65%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 14px transparent;
+  }
+}
+
 /* ------------------------------------------------------------ setup wizard */
 
 .steps {
@@ -660,70 +675,10 @@ input[type='range'] {
   padding: 3px 8px;
 }
 
-/* ------------------------------------ glasses step: the stereo confirm control */
-
-/*
- * The depth check is a card inside the calibration card, because it is the one
- * thing on that step you act on rather than read. Everything above it is
- * instruction; this is the control that ends the wizard.
- */
-.depth-block {
-  background: var(--bg);
-  margin: 18px 0 0;
-}
-
-/* Black field, like the therapy stage: the channels only separate cleanly on black. */
-.depth-stage {
-  background: var(--bg-stage);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px;
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  flex-wrap: wrap;
-  min-height: 60px;
-}
-
-.depth-tile {
-  padding: 5px;
-  background: #000;
-  border: 1px solid #222;
-  border-radius: 8px;
-  line-height: 0;
-}
-
-.depth-tile:hover {
-  border-color: var(--accent);
-}
-
-.depth-canvas {
-  display: block;
-}
-
-.depth-progress {
-  font-family: var(--mono);
-  font-size: 12px;
-}
-
-.depth-escape {
-  margin-top: 16px;
-}
-
-.depth-escape button {
-  font-size: 13px;
-  padding: 8px 14px;
-  color: var(--text-dim);
-}
-
-.depth-escape button:hover {
-  color: var(--text);
-}
-
 /*
  * Decorative only. A 1px red/blue fringe reads as a wink at what the glasses do
  * without making the words depend on wearing them — required text anywhere in Iris
- * outside the depth check must stay legible with bare eyes.
+ * outside the therapy stage must stay legible with bare eyes.
  */
 .anaglyph-3d {
   text-shadow: -1px 0 rgba(255, 43, 43, 0.55), 1px 0 rgba(43, 107, 255, 0.55);
