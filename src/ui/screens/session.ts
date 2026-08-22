@@ -28,6 +28,7 @@ import { PROCEDURE_REGISTRY } from '../../procedures/registry'
 import { getPendingSession } from '../../core/sessionState'
 import type { SessionRequest } from '../../core/sessionState'
 import { stampSessionCalibration } from './results'
+import { HitFeedback } from '../hitFeedback'
 import '../screens.css'
 
 export const sessionScreen: Screen = (root, nav) => {
@@ -83,6 +84,7 @@ export const sessionScreen: Screen = (root, nav) => {
   /* The procedures own `stage`; the HUD sits outside it so the runner's
      replaceChildren() between steps cannot wipe it. */
   const stage = el('div', { class: 'stage' })
+  const hitFeedback = new HitFeedback(stage)
   const hud = el('div', { class: 'stage-hud' })
   const hudProcedure = el('span', {}, 'Starting…')
   const hudStep = el('span', {})
@@ -90,10 +92,23 @@ export const sessionScreen: Screen = (root, nav) => {
   hud.append(hudProcedure, hudStep, hudClock)
 
   const pauseButton = el('button', { class: 'ghost' }, 'Pause')
+  const effectsButton = el(
+    'button',
+    { class: 'ghost effects-toggle', title: 'Toggle the extra chime and hit-circle effects' },
+    'Hit FX on',
+  )
   const homeButton = el('button', { class: 'ghost' }, 'End session')
-  const bar = el('div', { class: 'session-controls' }, pauseButton, homeButton)
+  const bar = el('div', { class: 'session-controls' }, effectsButton, pauseButton, homeButton)
 
   pauseButton.addEventListener('click', () => controls?.togglePause())
+  let effectsEnabled = true
+  effectsButton.setAttribute('aria-pressed', 'true')
+  effectsButton.addEventListener('click', () => {
+    effectsEnabled = !effectsEnabled
+    hitFeedback.setEnabled(effectsEnabled)
+    effectsButton.setAttribute('aria-pressed', String(effectsEnabled))
+    effectsButton.textContent = effectsEnabled ? 'Hit FX on' : 'Hit FX off'
+  })
   homeButton.addEventListener('click', () => endAndLeave())
 
   root.append(stage, hud, bar)
@@ -216,6 +231,9 @@ export const sessionScreen: Screen = (root, nav) => {
       hudClock.textContent = paused ? 'paused' : formatClock(remainingMs)
       renderPaused(paused)
     },
+    onTrial(trial) {
+      if (trial.correct) hitFeedback.hit()
+    },
     showRest(message, seconds, c) {
       return showRest(message, seconds, c)
     },
@@ -272,6 +290,7 @@ export const sessionScreen: Screen = (root, nav) => {
 
   return () => {
     disposed = true
+    hitFeedback.dispose()
     controls?.end()
     for (const id of intervals) window.clearInterval(id)
     intervals.clear()

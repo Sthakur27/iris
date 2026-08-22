@@ -425,6 +425,12 @@ input[type='range'] {
   border-color: var(--accent-dim);
 }
 
+.session-controls .effects-toggle[aria-pressed='true'] {
+  color: #b8f3ff;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
 /* Self-guided mode: present but visibly secondary to the structured plan. */
 .self-guided {
   margin-top: 20px;

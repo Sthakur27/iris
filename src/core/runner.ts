@@ -34,6 +34,8 @@ export interface SessionControls {
 export interface RunnerHooks {
   onStepStart(step: PlanStep, index: number, total: number, controls: SessionControls): void
   onTick(remainingMs: number, paused: boolean): void
+  /** Called after a rep is recorded, for session-level feedback and UI only. */
+  onTrial?(trial: Trial): void
   /** Resolves when the rest is over, whether it ran out or the user skipped it. */
   showRest(message: string, seconds: number, controls: SessionControls): Promise<void>
   onStepEnd(result: ProcedureResult): void
@@ -117,7 +119,10 @@ export async function runSession(
     const ctx: ProcedureContext = {
       root,
       settings,
-      onTrial: (t) => trials.push(t),
+      onTrial: (t) => {
+        trials.push(t)
+        hooks.onTrial?.(t)
+      },
       requestBreak: async (reason) => {
         await runRest(reason, 20)
       },
