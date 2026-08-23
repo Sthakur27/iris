@@ -8,6 +8,7 @@ export type ProcedureId =
   | 'accommodativeRock'
   | 'jumpDuctions'
   | 'cyclopeanLetters'
+  | 'depthCinema'
 
 /** Screen + posture calibration. Everything that converts pixels to clinical units. */
 export interface Calibration {
@@ -45,6 +46,16 @@ export interface FlipperLevel {
 /** Which units to show lengths in. Stored so it is asked once, not every time. */
 export type LengthUnit = 'cm' | 'in'
 
+export interface DepthCinemaSettings {
+  direction: 'convergence' | 'divergence'
+  /** Reverse the scene's travel so gates approach rather than recede. */
+  reversePlayback: boolean
+  convergencePeakPd: number
+  divergencePeakPd: number
+  /** Seconds spent easing from relaxed fusion to the configured peak. */
+  rampSeconds: number
+}
+
 export interface Settings {
   calibration: Calibration
   /** The user's preferred units for distances and screen sizes. */
@@ -62,6 +73,8 @@ export interface Settings {
   prescription: Prescription
   /** Insert an explicit look-away reset between reps (Iris addition, not in HTS). */
   restBetweenRepsMs: number
+  /** Independent settings for the experimental animated vergence exercise. */
+  depthCinema: DepthCinemaSettings
 }
 
 /** One stimulus-response pair. Latency is recorded from the first session onward. */
@@ -86,6 +99,13 @@ export interface Trial {
   isCatch?: boolean
   /** How the user answered: a direction, or an honest "I can't see it". */
   kind?: 'answer' | 'cannotSee'
+
+  /**
+   * Current-viewport position of the stimulus that was answered. This is only used
+   * while the session is live to place decorative hit feedback; results do not read
+   * it and older recorded trials simply omit it.
+   */
+  hitPoint?: { x: number; y: number }
 
   /**
    * Accommodative Rock. The first target after each colour change is the one that

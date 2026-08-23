@@ -37,6 +37,7 @@ export const PROCEDURE_LABELS: Record<ProcedureId, string> = {
   accommodativeRock: 'Accommodative Rock',
   jumpDuctions: 'Jump Ductions',
   cyclopeanLetters: 'Cyclopean Letters',
+  depthCinema: 'Depth Cinema',
 }
 
 export type DemandUnit = 'pd' | 'level' | 'none'
@@ -54,6 +55,7 @@ export function demandUnit(id: ProcedureId): DemandUnit {
       return 'level'
     case 'pursuits':
     case 'saccades':
+    case 'depthCinema':
       return 'none'
   }
 }

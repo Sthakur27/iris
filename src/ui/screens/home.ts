@@ -18,6 +18,7 @@ import type { Nav, RouteParams, Screen } from '../router'
 import {
   CYCLOPEAN_LETTERS,
   DAILY_PROTOCOL,
+  DEPTH_CINEMA,
   JUMP_DUCTIONS,
   jumpDuctionsUnlocked,
   loadSessions,
@@ -30,7 +31,6 @@ import type { SessionRequest } from '../../core/sessionState'
 import type { Settings } from '../../core/types'
 import '../screens.css'
 
-const REST_BETWEEN_PROCEDURES_SECONDS = 30
 const STRIP_DAYS = 14
 
 /** The two top-level views on the home screen. */
@@ -202,6 +202,7 @@ export const homeScreen: Screen = (root, nav) => {
     if (jumpDuctionsUnlocked()) list.push(JUMP_DUCTIONS)
     // Experimental, ungated, self-guided only — deliberately not in DAILY_PROTOCOL.
     list.push(CYCLOPEAN_LETTERS)
+    list.push(DEPTH_CINEMA)
     return list
   }
 
@@ -245,14 +246,11 @@ export const homeScreen: Screen = (root, nav) => {
       )
     }
 
-    const rests = (DAILY_PROTOCOL.length + (unlocked ? 1 : 0) - 1) * REST_BETWEEN_PROCEDURES_SECONDS
     card.append(
       el(
         'p',
         { class: 'gloss' },
-        `${formatMinutes(totalSeconds)} of exercises, plus ${REST_BETWEEN_PROCEDURES_SECONDS}-second rests ` +
-          `between blocks — about ${formatMinutes(totalSeconds + rests)} in the chair. The rests are part of ` +
-          'the treatment rather than padding. You can skip a rest if you need to, and skipped rests are recorded.',
+        `${formatMinutes(totalSeconds)} of exercises. The blocks now run directly into one another; Pause remains available whenever you need it.`,
       ),
     )
     return card
@@ -505,7 +503,7 @@ export const homeScreen: Screen = (root, nav) => {
     // which stops TypeScript narrowing the union on the field access below.
     const request: SessionRequest = requested
     if (request.mode === 'plan') {
-      return 'The full plan starts on a black screen and runs about half an hour, rests included.'
+      return 'The full plan starts on a black screen and runs continuously for about half an hour.'
     }
     const step = availableProcedures().find((p) => p.id === request.procedureId)
     const name = step ? step.label : 'This exercise'
@@ -531,7 +529,7 @@ export const homeScreen: Screen = (root, nav) => {
     return el('div', { class: 'back-row' }, back)
   }
 
-  /** Which exercise the preview should show, and what to say about the rest. */
+  /** Which exercise the preview should show, and what to say about the plan after it. */
   function previewCard(): HTMLElement | null {
     const request: SessionRequest = requested
     const first = DAILY_PROTOCOL[0]
@@ -551,7 +549,7 @@ export const homeScreen: Screen = (root, nav) => {
       planNote:
         request.mode === 'plan'
           ? `${step.label} is where the session opens. It then moves through the rest of the plan in ` +
-            'order, with a rest between each one, and each exercise explains itself as it starts.'
+            'order, and each exercise explains itself as it starts.'
           : null,
     })
   }

@@ -51,6 +51,7 @@ const PROCEDURE_IDS: readonly ProcedureId[] = [
   'accommodativeRock',
   'jumpDuctions',
   'cyclopeanLetters',
+  'depthCinema',
 ]
 
 /** `SessionRequest.procedureId` is a bare string, so it has to be re-checked here. */
@@ -196,6 +197,18 @@ function copyFor(id: ProcedureId): Copy {
           { key: 'Space', means: `I see only noise. ${spaceRest}` },
         ],
       }
+
+    case 'depthCinema':
+      return {
+        stimulus:
+          'A tiny red-and-blue space scene loops on the black field: stars drift, depth rings approach, ' +
+          'and a little ship moves through them. Through the glasses the layers assemble at different depths.',
+        task:
+          'Watch the ship and let the scene become one stable 3D picture. Its prism demand rises smoothly ' +
+          'toward the separate Depth Cinema setting, then eases back before the next loop. Settings can also ' +
+          'reverse the movie so the scene moves closer. There are no answers to enter.',
+        keys: [{ key: 'Just watch', means: 'Keep the ship single and comfortable; pause if it doubles.' }],
+      }
   }
 }
 
@@ -256,7 +269,44 @@ function draw(id: ProcedureId, cal: Calibration): Drawn {
           'eye alone. Without the glasses this is just noise; there is no letter printed anywhere in it.',
       }
     }
+    case 'depthCinema':
+      paintCinemaPreview(canvas, cal)
+      return {
+        canvas,
+        caveat:
+          'A frozen frame at a gentle 2Δ. The exercise animates continuously and uses its own direction, peak, and ramp time from Settings.',
+      }
   }
+}
+
+function paintCinemaPreview(canvas: HTMLCanvasElement, cal: Calibration): void {
+  const g = blankCanvas(canvas)
+  if (!g) return
+  const disparity = prismDioptresToPx(2, cal)
+  g.globalCompositeOperation = 'lighter'
+  for (const eye of ['left', 'right'] as const) {
+    const colour = eye === cal.redEye ? RED : BLUE
+    const sign = eye === 'left' ? 1 : -1
+    g.strokeStyle = colour
+    g.fillStyle = colour
+    g.globalAlpha = 0.82
+    for (let i = 0; i < 3; i++) {
+      const depth = 0.35 + i * 0.24
+      const shift = sign * disparity * depth * 0.5
+      g.beginPath()
+      g.arc(PREVIEW_WIDTH_PX / 2 + shift, PREVIEW_HEIGHT_PX / 2, 18 + i * 22, 0, Math.PI * 2)
+      g.stroke()
+    }
+    const shift = sign * disparity * 0.5
+    g.beginPath()
+    g.moveTo(PREVIEW_WIDTH_PX / 2 - 25 + shift, PREVIEW_HEIGHT_PX / 2)
+    g.lineTo(PREVIEW_WIDTH_PX / 2 + 20 + shift, PREVIEW_HEIGHT_PX / 2 - 12)
+    g.lineTo(PREVIEW_WIDTH_PX / 2 + 11 + shift, PREVIEW_HEIGHT_PX / 2 + 12)
+    g.closePath()
+    g.fill()
+  }
+  g.globalCompositeOperation = 'source-over'
+  g.globalAlpha = 1
 }
 
 /**

@@ -490,6 +490,13 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
           correct = !isCatch && response.direction === direction
         }
 
+        const centre = cCentre(layout, i)
+        const canvasRect = canvas.getBoundingClientRect()
+        const hitPoint = {
+          x: canvasRect.left + (centre.x / canvas.width) * canvasRect.width,
+          y: canvasRect.top + (centre.y / canvas.height) * canvasRect.height,
+        }
+
         const trial: RockTrial = {
           index: recorded.length,
           // Rock is scored in flipper levels, per the core `Trial` contract.
@@ -504,6 +511,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
           positionInRow: i,
           rowColour: colour,
           flipperD: powerFor(eye),
+          ...(response.kind === 'answer' ? { hitPoint } : {}),
         }
         recorded.push(trial)
         monitor.push(trial)
@@ -512,7 +520,6 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
         placement.answered()
 
         // --- Feedback ----------------------------------------------------
-        const centre = cCentre(layout, i)
         if (response.kind === 'cannotSee') {
           feedback.tone('neutral')
           setPrompt(
@@ -531,6 +538,10 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
           feedback.tone('incorrect')
           setPrompt(isCatch ? 'That one had no readable gap — space is the answer there.' : '')
         }
+
+        // The entire row stays visible, but the active marker advances on the next
+        // paint. Give the ring one readable beat on this C before moving forward.
+        if (response.kind === 'answer') await sleep(260, signal)
 
         // --- Fatigue ------------------------------------------------------
         const breakReason = fatigue.shouldBreak()

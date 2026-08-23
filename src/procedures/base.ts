@@ -16,7 +16,7 @@ export interface ProcedureContext {
   settings: Settings
   /** Report a completed stimulus-response pair. Call once per rep. */
   onTrial(trial: Trial): void
-  /** Ask the runner to interrupt for a rest. Used when fatigue signals fire. */
+  /** Notify the runner of fatigue. Kept for procedures' rolling-state reset. */
   requestBreak(reason: string): Promise<void>
   /** Resolves when the procedure's allotted time is up or the user quits. */
   signal: AbortSignal

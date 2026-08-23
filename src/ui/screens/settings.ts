@@ -102,6 +102,59 @@ export const settingsScreen: Screen = (root, nav) => {
     )
     children.push(vergence)
 
+    /* ------------------------------------------------------- depth cinema */
+
+    const cinema = el('div', { class: 'card' })
+    const cinemaDirection = el('select')
+    const convergenceOption = el('option', { value: 'convergence' }, 'Convergence — eyes turn inward')
+    const divergenceOption = el('option', { value: 'divergence' }, 'Divergence — eyes turn outward')
+    cinemaDirection.append(convergenceOption, divergenceOption)
+    cinemaDirection.value = settings.depthCinema.direction
+    const cinemaReverse = el('input', {
+      type: 'checkbox',
+      checked: settings.depthCinema.reversePlayback,
+    })
+    const cinemaConvergence = numberField(
+      'Convergence peak (Δ)',
+      settings.depthCinema.convergencePeakPd,
+      { min: 0.5, max: 40, step: 0.5 },
+    )
+    const cinemaDivergence = numberField(
+      'Divergence peak (Δ)',
+      settings.depthCinema.divergencePeakPd,
+      { min: 0.5, max: 20, step: 0.5 },
+    )
+    const cinemaRamp = numberField(
+      'Time to reach peak (seconds)',
+      settings.depthCinema.rampSeconds,
+      { min: 5, max: 120, step: 1 },
+    )
+    cinema.append(
+      el('h2', {}, 'Depth Cinema — experimental'),
+      el(
+        'p',
+        {},
+        'A separate, passive 3D animation that smoothly raises vergence demand, then eases home and loops. ' +
+          'It does not replace or alter the scored Convergence and Divergence exercises.',
+      ),
+      el('div', { class: 'field' }, el('label', {}, 'Movie direction'), cinemaDirection),
+      el(
+        'label',
+        { class: 'toggle-row' },
+        cinemaReverse,
+        el('span', {}, 'Play in reverse — the scene moves closer instead of deeper'),
+      ),
+      el('div', { class: 'grid-2' }, cinemaConvergence.field, cinemaDivergence.field),
+      cinemaRamp.field,
+      el(
+        'p',
+        { class: 'gloss' },
+        'Only the peak for the selected direction is used. The app will lower it at runtime if the calibrated ' +
+          'screen cannot display that disparity safely. Stop or pause if the scene doubles, strains, or feels uncomfortable.',
+      ),
+    )
+    children.push(cinema)
+
     /* --------------------------------------------------------- flipper ladder */
 
     const flippers = el('div', { class: 'card' })
@@ -255,6 +308,9 @@ export const settingsScreen: Screen = (root, nav) => {
       const accuracyValue = Number(accuracy.input.value)
       const cpmValue = Number(cpm.input.value)
       const restValue = Number(rest.input.value)
+      const cinemaConvergenceValue = Number(cinemaConvergence.input.value)
+      const cinemaDivergenceValue = Number(cinemaDivergence.input.value)
+      const cinemaRampValue = Number(cinemaRamp.input.value)
 
       const levels: FlipperLevel[] = []
       for (const row of flipperInputs) {
@@ -268,7 +324,18 @@ export const settingsScreen: Screen = (root, nav) => {
         levels.push({ level: row.level, rightEyeD: rightValue, leftEyeD: leftValue })
       }
 
-      if (![convValue, divValue, accuracyValue, cpmValue, restValue].every(Number.isFinite)) {
+      if (
+        ![
+          convValue,
+          divValue,
+          accuracyValue,
+          cpmValue,
+          restValue,
+          cinemaConvergenceValue,
+          cinemaDivergenceValue,
+          cinemaRampValue,
+        ].every(Number.isFinite)
+      ) {
         message = { kind: 'bad', text: 'Every field has to be a number. Nothing was saved.' }
         render()
         return
@@ -294,6 +361,21 @@ export const settingsScreen: Screen = (root, nav) => {
         render()
         return
       }
+      if (
+        cinemaConvergenceValue < 0.5 ||
+        cinemaConvergenceValue > 40 ||
+        cinemaDivergenceValue < 0.5 ||
+        cinemaDivergenceValue > 20 ||
+        cinemaRampValue < 5 ||
+        cinemaRampValue > 120
+      ) {
+        message = {
+          kind: 'bad',
+          text: 'Depth Cinema needs a 0.5–40Δ convergence peak, a 0.5–20Δ divergence peak, and a 5–120 second ramp.',
+        }
+        render()
+        return
+      }
 
       settings = {
         ...settings,
@@ -305,6 +387,13 @@ export const settingsScreen: Screen = (root, nav) => {
           rockCpmGoal: cpmValue,
         },
         restBetweenRepsMs: Math.round(restValue * 1000),
+        depthCinema: {
+          direction: cinemaDirection.value === 'divergence' ? 'divergence' : 'convergence',
+          reversePlayback: cinemaReverse.checked,
+          convergencePeakPd: cinemaConvergenceValue,
+          divergencePeakPd: cinemaDivergenceValue,
+          rampSeconds: cinemaRampValue,
+        },
         advancedMode: settings.advancedMode,
       }
       saveSettings(settings)

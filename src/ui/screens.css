@@ -1,7 +1,7 @@
 /*
  * Screen-level styles. src/styles.css owns the design tokens and the therapy
  * stage; this file only adds the chrome the five screens need (wizard, plan
- * list, checklist, charts). Nothing here touches .stage or .rest.
+ * list, checklist, charts). Nothing here touches .stage or the pause overlay.
  */
 
 .head {
@@ -295,9 +295,9 @@ input[type='range'] {
   top: 26px;
 }
 
-/* ------------------------------------------------------------- rest screen */
+/* ------------------------------------------------------------ pause overlay */
 
-.rest p {
+.pause-overlay p {
   max-width: 520px;
 }
 
@@ -405,7 +405,7 @@ input[type='range'] {
    with the target for attention. */
 .session-controls {
   position: fixed;
-  bottom: 14px;
+  top: 56px;
   right: 16px;
   display: flex;
   gap: 8px;

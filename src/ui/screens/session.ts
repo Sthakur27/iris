@@ -2,15 +2,7 @@
  * The session shell.
  *
  * Builds the plan, hands it to `runSession`, and renders the chrome a therapy
- * session is allowed: a thin HUD, the rest screen, and the controls that let you
- * out of it.
- *
- * On rests being skippable: distributed practice is one of the better-supported
- * effects in this whole programme, so the rest screen is still the default path and
- * still says why it matters. But an exercise you cannot leave is how a home
- * programme earns the dread that ends it, and the honest answer to "did you rest?"
- * is to record the skip rather than to remove the option. See the note on
- * `SessionControls` in core/runner.ts.
+ * session is allowed: a thin HUD and controls that let you pause or leave.
  */
 
 import { el } from '../router'
@@ -18,6 +10,7 @@ import type { Screen } from '../router'
 import {
   CYCLOPEAN_LETTERS,
   DAILY_PROTOCOL,
+  DEPTH_CINEMA,
   JUMP_DUCTIONS,
   jumpDuctionsUnlocked,
   loadSettings,
@@ -58,7 +51,7 @@ export const sessionScreen: Screen = (root, nav) => {
 
   const plan: PlanStep[] = []
   if (request.mode === 'single') {
-    const known = [...DAILY_PROTOCOL, JUMP_DUCTIONS, CYCLOPEAN_LETTERS].find(
+    const known = [...DAILY_PROTOCOL, JUMP_DUCTIONS, CYCLOPEAN_LETTERS, DEPTH_CINEMA].find(
       (s) => s.id === request.procedureId,
     )
     if (known) {
@@ -79,7 +72,6 @@ export const sessionScreen: Screen = (root, nav) => {
 
   let disposed = false
   let controls: SessionControls | null = null
-  const intervals = new Set<number>()
 
   /* The procedures own `stage`; the HUD sits outside it so the runner's
      replaceChildren() between steps cannot wipe it. */
@@ -125,7 +117,7 @@ export const sessionScreen: Screen = (root, nav) => {
       home.addEventListener('click', () => endAndLeave())
       pausePanel = el(
         'div',
-        { class: 'rest' },
+        { class: 'pause-overlay' },
         el('h2', {}, 'Paused'),
         el(
           'p',
@@ -147,67 +139,6 @@ export const sessionScreen: Screen = (root, nav) => {
     // The runner resolves on its own once the current step aborts; if it has not
     // started yet there is nothing to wait for.
     if (!controls) nav.go('home')
-  }
-
-  function showRest(message: string, seconds: number, c: SessionControls): Promise<void> {
-    return new Promise<void>((resolve) => {
-      if (disposed) {
-        resolve()
-        return
-      }
-
-      const panel = el('div', { class: 'rest' })
-      const timer = el('div', { class: 'rest-timer' }, String(seconds))
-
-      const skip = el('button', {}, 'Skip this rest')
-      skip.addEventListener('click', () => {
-        c.skipRest()
-        finish()
-      })
-      const home = el('button', {}, 'End session')
-      home.addEventListener('click', () => {
-        finish()
-        endAndLeave()
-      })
-
-      panel.append(
-        el('h2', {}, 'Rest'),
-        el('p', {}, message),
-        timer,
-        el(
-          'p',
-          { class: 'muted' },
-          'Spacing the blocks out is part of the treatment rather than padding between the useful ' +
-            'bits — a session run back-to-back trains noticeably less than the same minutes rested. ' +
-            'You can skip it, and skipped rests are recorded so your results stay honest.',
-        ),
-        el('div', { class: 'actions' }, skip, home),
-      )
-      root.append(panel)
-
-      const endsAt = Date.now() + seconds * 1000
-
-      const finish = (): void => {
-        window.clearInterval(id)
-        intervals.delete(id)
-        panel.remove()
-        resolve()
-      }
-
-      const tick = (): void => {
-        if (disposed) {
-          finish()
-          return
-        }
-        const remaining = Math.max(0, endsAt - Date.now())
-        timer.textContent = String(Math.ceil(remaining / 1000))
-        if (remaining <= 0) finish()
-      }
-
-      const id = window.setInterval(tick, 200)
-      intervals.add(id)
-      tick()
-    })
   }
 
   const onKey = (event: KeyboardEvent): void => {
@@ -232,13 +163,11 @@ export const sessionScreen: Screen = (root, nav) => {
       renderPaused(paused)
     },
     onTrial(trial) {
-      if (trial.correct) hitFeedback.hit()
-    },
-    showRest(message, seconds, c) {
-      return showRest(message, seconds, c)
+      if (trial.correct) hitFeedback.hit(trial.hitPoint)
+      else hitFeedback.miss(trial.hitPoint)
     },
     onStepEnd() {
-      // Nothing visible between procedures: the rest screen is the transition.
+      // The next procedure begins immediately.
     },
   }
 
@@ -292,8 +221,6 @@ export const sessionScreen: Screen = (root, nav) => {
     disposed = true
     hitFeedback.dispose()
     controls?.end()
-    for (const id of intervals) window.clearInterval(id)
-    intervals.clear()
     window.removeEventListener('keydown', onKey)
   }
 }

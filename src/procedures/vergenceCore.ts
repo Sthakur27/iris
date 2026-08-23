@@ -587,6 +587,8 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     handSet: false,
     /** A drag landed between reps; the next rep runs on it and must be marked. */
     pendingMark: false,
+    /** Exact target centre in canvas pixels from the most recent renderer pass. */
+    hitPoint: null as { x: number; y: number } | null,
   }
 
   /** Draws the current stimulus at the current magnitude. Safe to call mid-rep. */
@@ -596,7 +598,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     paintHud()
     const disparityPx = prismDioptresToPx(currentSignedPd, cal)
     if (mode === 'rds') {
-      paintRds(canvas, {
+      live.hitPoint = paintRds(canvas, {
         fieldW: field.widthPx,
         fieldH: field.heightPx,
         disparityPx,
@@ -607,7 +609,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
         scale: targetScale(),
       })
     } else {
-      paintFlat(canvas, {
+      live.hitPoint = paintFlat(canvas, {
         // The flat canvas is not the stereo field, so its size is free to follow
         // the slider; the disparity it carries is unchanged.
         fieldPx: Math.max(
@@ -622,6 +624,19 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     }
     // The canvas may have changed size, so the offset re-clamps against it.
     placement.apply()
+  }
+
+  /** Turns the renderer's exact canvas point into its current viewport position. */
+  function cardinalHitPoint(): { x: number; y: number } {
+    const rect = canvas.getBoundingClientRect()
+    const point = live.hitPoint
+    if (!point || canvas.width === 0 || canvas.height === 0) {
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    }
+    return {
+      x: rect.left + (point.x / canvas.width) * rect.width,
+      y: rect.top + (point.y / canvas.height) * rect.height,
+    }
   }
 
   // Present only in advanced mode. Off by default, and never turned on for the user.
@@ -784,6 +799,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
         latencyMs: Math.round(response.latencyMs),
         isCatch,
         kind: response.kind,
+        ...(response.kind === 'answer' && !isCatch ? { hitPoint: cardinalHitPoint() } : {}),
         ...(handSet ? { manualDemand: true } : {}),
       }
       monitor.push(trial)
@@ -825,6 +841,11 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
         flash(canvasWrap, 'var(--bad)')
         setPrompt(isCatch ? 'That one had no target — space is the answer there.' : '')
       }
+
+      // Keep the answered square on screen long enough for the ring to visibly
+      // attach to it. Without this, the next cardinal target replaces it almost
+      // immediately and makes a correctly positioned ring look misplaced.
+      if (response.kind === 'answer' && !isCatch) await sleep(260, signal)
 
       // --- Flat-fusion fallback -------------------------------------------
       if (response.kind === 'cannotSee' && !isCatch) consecutiveCannotSee += 1
@@ -1000,7 +1021,7 @@ function paintRds(
     seed: number
     scale: number
   },
-): void {
+): { x: number; y: number } | null {
   const { fieldW, fieldH } = opts
   // The four positions are scaled by the field's height and clustered around its
   // centre. The field is far wider than it is tall, so a target laid out against the
@@ -1044,6 +1065,11 @@ function paintRds(
         }
       : null,
   })
+
+  if (!centre) return null
+  // `renderRds` adds equal margins either side of the field. Reading the completed
+  // canvas back keeps this point aligned even if its disparity margin changes.
+  return { x: (canvas.width - fieldW) / 2 + centre.cx, y: centre.cy }
 }
 
 function paintFlat(
@@ -1055,13 +1081,13 @@ function paintFlat(
     oddPosition: 0 | 1 | 2 | 3
     neutralise: boolean
   },
-): void {
+): { x: number; y: number } {
   const width = Math.round(opts.fieldPx + Math.abs(opts.disparityPx) + 40)
   const height = opts.fieldPx
   canvas.width = width
   canvas.height = height
   const ctx = canvas.getContext('2d')
-  if (!ctx) return
+  if (!ctx) return { x: width / 2, y: height / 2 }
 
   const args = {
     width,
@@ -1072,6 +1098,15 @@ function paintFlat(
   }
   renderFlatFusion(ctx, args)
   if (opts.neutralise) neutraliseFlatTarget(ctx, args)
+
+  const r = Math.min(width, height) * 0.3
+  const positions = [
+    { x: width / 2, y: height / 2 - r },
+    { x: width / 2, y: height / 2 + r },
+    { x: width / 2 - r, y: height / 2 },
+    { x: width / 2 + r, y: height / 2 },
+  ]
+  return positions[opts.oddPosition] ?? { x: width / 2, y: height / 2 }
 }
 
 function flash(node: HTMLElement, color: string): void {

@@ -178,6 +178,140 @@ label {
   display: block;
 }
 
+.cinema-frame {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #02040a;
+}
+
+.cinema-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.72);
+}
+
+.cinema-prompt {
+  bottom: 102px;
+  color: #a9b7c8;
+}
+
+.cinema-controls {
+  position: fixed;
+  z-index: 16;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cinema-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.cinema-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 10px;
+  border-color: rgba(139, 151, 166, 0.42);
+  background: rgba(7, 12, 20, 0.55);
+  color: #b5c3d4;
+  font-size: 12px;
+}
+
+.cinema-action[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: #d7f2ff;
+  background: rgba(31, 77, 143, 0.52);
+}
+
+.cinema-control {
+  display: grid;
+  grid-template-columns: 42px minmax(110px, 180px) 48px;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.cinema-control input[type='range'] {
+  width: clamp(110px, 16vw, 180px);
+  accent-color: var(--accent);
+}
+
+.cinema-control-name {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.cinema-shortcut {
+  width: max-content;
+  min-width: 18px;
+  padding: 1px 4px;
+  border: 1px solid rgba(181, 195, 212, 0.42);
+  border-radius: 4px;
+  color: #d7e4f2;
+  font: 10px/1 var(--mono);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.cinema-action-label {
+  white-space: nowrap;
+}
+
+.cinema-control-value {
+  color: var(--text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 620px) {
+  .cinema-controls {
+    width: calc(100% - 24px);
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .cinema-actions {
+    width: 100%;
+  }
+
+  .cinema-action {
+    flex: 1;
+    padding-inline: 5px;
+  }
+
+  .cinema-control {
+    width: 100%;
+    grid-template-columns: 42px 1fr 48px;
+  }
+
+  .cinema-control input[type='range'] {
+    width: 100%;
+  }
+}
+
 /*
  * The HUD used to be #4a5560 on black — about 2.5:1 contrast, well under the 4.5:1
  * floor for body text, and the app asks you to dim the room, which makes it worse.
@@ -221,8 +355,6 @@ label {
 /* Score-free, osu-inspired hit feedback. The central placement supports the
    fusion target instead of pulling the user's gaze toward decorative UI. */
 .hit-burst {
-  --hit-x: 0px;
-  --hit-y: 0px;
   --hit-hue: 205;
   position: fixed;
   z-index: 15;
@@ -231,7 +363,7 @@ label {
   width: 1px;
   height: 1px;
   pointer-events: none;
-  transform: translate(calc(-50% + var(--hit-x)), calc(-50% + var(--hit-y)));
+  transform: translate(-50%, -50%);
   filter: drop-shadow(0 0 7px hsl(var(--hit-hue) 95% 64% / 0.75));
 }
 
@@ -243,7 +375,12 @@ label {
   box-shadow:
     0 0 0 3px hsl(var(--hit-hue) 95% 58% / 0.18),
     inset 0 0 8px hsl(var(--hit-hue) 95% 72% / 0.45);
-  animation: hit-ring-pop 560ms cubic-bezier(0.15, 0.7, 0.2, 1) forwards;
+  animation: hit-ring-pop 360ms cubic-bezier(0.15, 0.7, 0.2, 1) forwards;
+}
+
+.hit-burst.is-miss {
+  --hit-hue: 4 !important;
+  filter: drop-shadow(0 0 5px hsl(4 85% 60% / 0.55));
 }
 
 .hit-burst i {
@@ -256,7 +393,7 @@ label {
   border-radius: 50%;
   background: hsl(var(--hit-hue) 100% 78%);
   box-shadow: 0 0 6px currentColor;
-  animation: hit-particle 480ms ease-out forwards;
+  animation: hit-particle 320ms ease-out forwards;
   transform: rotate(var(--particle-angle)) translateX(8px);
 }
 
@@ -308,8 +445,8 @@ label {
   }
 }
 
-/* Rest interval: deliberately low-stimulus. */
-.rest {
+/* Pause is deliberately low-stimulus so a user can rest without a timer or task. */
+.pause-overlay {
   position: fixed;
   inset: 0;
   background: #05070a;
@@ -320,12 +457,6 @@ label {
   gap: 18px;
   text-align: center;
   padding: 24px;
-}
-
-.rest-timer {
-  font-family: var(--mono);
-  font-size: 56px;
-  color: var(--text-dim);
 }
 
 .stat-grid {

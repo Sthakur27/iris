@@ -29,6 +29,13 @@ export const DEFAULT_SETTINGS: Settings = {
     rockCpmGoal: 13,
   },
   restBetweenRepsMs: 0,
+  depthCinema: {
+    direction: 'convergence',
+    reversePlayback: false,
+    convergencePeakPd: 8,
+    divergencePeakPd: 4,
+    rampSeconds: 90,
+  },
   preferredUnit: 'cm',
   advancedMode: false,
 }
@@ -88,6 +95,13 @@ export const CYCLOPEAN_LETTERS = {
   seconds: 300,
 }
 
+/** Experimental, continuous animated vergence. Never added to the clinical plan. */
+export const DEPTH_CINEMA = {
+  id: 'depthCinema' as const,
+  label: 'Depth Cinema',
+  seconds: 420,
+}
+
 const SETTINGS_KEY = 'iris.settings.v1'
 const SESSIONS_KEY = 'iris.sessions.v1'
 
@@ -101,6 +115,7 @@ export function loadSettings(): Settings {
       ...parsed,
       calibration: { ...DEFAULT_SETTINGS.calibration, ...parsed.calibration },
       prescription: { ...DEFAULT_SETTINGS.prescription, ...parsed.prescription },
+      depthCinema: { ...DEFAULT_SETTINGS.depthCinema, ...parsed.depthCinema },
     }
   } catch {
     return structuredClone(DEFAULT_SETTINGS)

@@ -13,11 +13,9 @@ export interface PlanStep {
 /**
  * What the user can do to the session while it is running.
  *
- * An earlier version had none of this: rests could not be skipped and there was no
- * way out of a procedure short of closing the tab. That is a worse problem than a
- * skipped rest — being trapped in an exercise is exactly how people come to dread
- * and then abandon a home programme. So every escape hatch exists, and every use of
- * one is recorded on the session instead of being silently forgiven.
+ * These controls are intentionally limited to pausing and ending. The session runs
+ * its selected procedures continuously; users who need a break can pause whenever
+ * they want without being routed through a separate rest screen.
  */
 export interface SessionControls {
   pause(): void
@@ -27,8 +25,6 @@ export interface SessionControls {
   /** Finish now. Whatever was completed is kept and saved. */
   end(): void
   hasEnded(): boolean
-  /** Cut the rest that is currently on screen. No effect otherwise. */
-  skipRest(): void
 }
 
 export interface RunnerHooks {
@@ -36,19 +32,13 @@ export interface RunnerHooks {
   onTick(remainingMs: number, paused: boolean): void
   /** Called after a rep is recorded, for session-level feedback and UI only. */
   onTrial?(trial: Trial): void
-  /** Resolves when the rest is over, whether it ran out or the user skipped it. */
-  showRest(message: string, seconds: number, controls: SessionControls): Promise<void>
   onStepEnd(result: ProcedureResult): void
 }
-
-const REST_BETWEEN_PROCEDURES_SECONDS = 30
 
 /**
  * Drives one therapy session end to end.
  *
- * Interleaving and rest live here rather than in the procedures, because they are
- * session-level properties: the whole point of rotating procedures and resting
- * between them is that no single procedure can see it.
+ * Procedures are sequenced here so persistence and the session clock remain shared.
  */
 export async function runSession(
   root: HTMLElement,
@@ -62,11 +52,9 @@ export async function runSession(
     startedAt: Date.now(),
     results: [],
     endedEarly: false,
-    restsSkipped: 0,
   }
 
   let ended = false
-  let skipCurrentRest: (() => void) | null = null
   let stepController: AbortController | null = null
 
   const controls: SessionControls = {
@@ -81,13 +69,7 @@ export async function runSession(
       record.endedEarly = true
       // A pause must not survive the session, or the next one starts frozen.
       resetTherapyPause()
-      skipCurrentRest?.()
       stepController?.abort()
-    },
-    skipRest: () => {
-      if (!skipCurrentRest) return
-      record.restsSkipped = (record.restsSkipped ?? 0) + 1
-      skipCurrentRest()
     },
   }
 
@@ -123,9 +105,9 @@ export async function runSession(
         trials.push(t)
         hooks.onTrial?.(t)
       },
-      requestBreak: async (reason) => {
-        await runRest(reason, 20)
-      },
+      // Procedures still report fatigue so they can reset their rolling detector,
+      // but the session no longer interrupts with a mandatory rest screen.
+      requestBreak: async () => {},
       signal: controller.signal,
     }
 
@@ -149,30 +131,10 @@ export async function runSession(
     hooks.onStepEnd(result)
     saveSession(record)
 
-    if (!ended && i < plan.length - 1) {
-      await runRest(
-        'Look at something at least 6 metres away until the timer runs out.',
-        REST_BETWEEN_PROCEDURES_SECONDS,
-      )
-    }
   }
 
   resetTherapyPause()
   saveSession(record)
   return record
 
-  /** Wraps a rest so `controls.skipRest()` and `controls.end()` can cut it short. */
-  async function runRest(message: string, seconds: number): Promise<void> {
-    if (ended) return
-    let resolveSkip: (() => void) | null = null
-    const skipped = new Promise<void>((resolve) => {
-      resolveSkip = resolve
-    })
-    skipCurrentRest = () => resolveSkip?.()
-    try {
-      await Promise.race([hooks.showRest(message, seconds, controls), skipped])
-    } finally {
-      skipCurrentRest = null
-    }
-  }
 }

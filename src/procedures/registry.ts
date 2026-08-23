@@ -7,6 +7,7 @@ import { accommodativeRock } from './accommodativeRock'
 import { pursuits } from './pursuits'
 import { saccades } from './saccades'
 import { cyclopeanLetters } from './cyclopeanLetters'
+import { depthCinema } from './depthCinema'
 
 /** Single place the session runner resolves a plan step to an implementation. */
 export const PROCEDURE_REGISTRY: Map<ProcedureId, Procedure> = new Map(
@@ -18,5 +19,6 @@ export const PROCEDURE_REGISTRY: Map<ProcedureId, Procedure> = new Map(
     pursuits,
     saccades,
     cyclopeanLetters,
+    depthCinema,
   ].map((p) => [p.id, p]),
 )
