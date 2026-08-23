@@ -1,7 +1,7 @@
 import type { EyeSide } from '../core/types'
 import type { Procedure, ProcedureContext } from './base'
 import { createElapsedClock } from './base'
-import { prismDioptresToPx, pxToPrismDioptres } from '../core/geometry'
+import { prismDioptresToPx } from '../core/geometry'
 import { el } from '../ui/router'
 
 /**
@@ -63,6 +63,7 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
   const sign = config.direction === 'convergence' ? 1 : -1
   const requestedPeak =
     config.direction === 'convergence' ? config.convergencePeakPd : config.divergencePeakPd
+  const maximumPeak = config.direction === 'convergence' ? 40 : 20
 
   const stage = el('div', { class: 'stage cinema-stage' })
   const frame = el('div', { class: 'cinema-frame' })
@@ -93,7 +94,7 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
   const depthInput = el('input', {
     type: 'range',
     min: '0.5',
-    max: String(requestedPeak),
+    max: String(maximumPeak),
     step: '0.5',
     value: String(requestedPeak),
   })
@@ -164,7 +165,6 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
   let width = 0
   let height = 0
   let dpr = 1
-  let screenCeilingPd = 0
   let raf = 0
   let speed = 0.5
   let livePeakPd = requestedPeak
@@ -268,12 +268,7 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
     canvas.style.width = `${width}px`
     canvas.style.height = `${height}px`
 
-    // The hero is allowed to use at most 24% of the movie width as total disparity.
-    // Beyond that the two eye images lose too much common scene to read as one movie.
-    screenCeilingPd = pxToPrismDioptres(width * 0.24, cal)
-    const availablePeak = Math.max(0.5, Math.min(requestedPeak, screenCeilingPd))
-    depthInput.max = String(availablePeak)
-    livePeakPd = Math.min(livePeakPd, availablePeak)
+    livePeakPd = Math.min(livePeakPd, maximumPeak)
     depthInput.value = String(livePeakPd)
     depthValue.textContent = `${livePeakPd.toFixed(1)}Δ`
   }
@@ -297,7 +292,7 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
     const rising = inCycle <= rampMs
     const raw = rising ? inCycle / rampMs : 1 - (inCycle - rampMs) / relaxMs
     const progress = smoothStep(Math.max(0, Math.min(1, raw)))
-    const peak = Math.max(0.5, Math.min(livePeakPd, screenCeilingPd))
+    const peak = Math.max(0.5, Math.min(livePeakPd, maximumPeak))
     const demand = peak * progress
     const signedDemand = sign * demand
 
