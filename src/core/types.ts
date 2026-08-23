@@ -54,6 +54,8 @@ export interface DepthCinemaSettings {
   divergencePeakPd: number
   /** Seconds spent easing from relaxed fusion to the configured peak. */
   rampSeconds: number
+  /** Independently moving anaglyph arrows to layer into the scene. */
+  movingArrowCount: number
 }
 
 export interface Settings {

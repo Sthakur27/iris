@@ -129,6 +129,11 @@ export const settingsScreen: Screen = (root, nav) => {
       settings.depthCinema.rampSeconds,
       { min: 5, max: 120, step: 1 },
     )
+    const cinemaArrows = numberField(
+      'Moving arrows (1–3)',
+      settings.depthCinema.movingArrowCount,
+      { min: 1, max: 3, step: 1 },
+    )
     cinema.append(
       el('h2', {}, 'Depth Cinema — experimental'),
       el(
@@ -145,7 +150,7 @@ export const settingsScreen: Screen = (root, nav) => {
         el('span', {}, 'Play in reverse — the scene moves closer instead of deeper'),
       ),
       el('div', { class: 'grid-2' }, cinemaConvergence.field, cinemaDivergence.field),
-      cinemaRamp.field,
+      el('div', { class: 'grid-2' }, cinemaRamp.field, cinemaArrows.field),
       el(
         'p',
         { class: 'gloss' },
@@ -311,6 +316,7 @@ export const settingsScreen: Screen = (root, nav) => {
       const cinemaConvergenceValue = Number(cinemaConvergence.input.value)
       const cinemaDivergenceValue = Number(cinemaDivergence.input.value)
       const cinemaRampValue = Number(cinemaRamp.input.value)
+      const cinemaArrowsValue = Number(cinemaArrows.input.value)
 
       const levels: FlipperLevel[] = []
       for (const row of flipperInputs) {
@@ -334,6 +340,7 @@ export const settingsScreen: Screen = (root, nav) => {
           cinemaConvergenceValue,
           cinemaDivergenceValue,
           cinemaRampValue,
+          cinemaArrowsValue,
         ].every(Number.isFinite)
       ) {
         message = { kind: 'bad', text: 'Every field has to be a number. Nothing was saved.' }
@@ -367,11 +374,14 @@ export const settingsScreen: Screen = (root, nav) => {
         cinemaDivergenceValue < 0.5 ||
         cinemaDivergenceValue > 20 ||
         cinemaRampValue < 5 ||
-        cinemaRampValue > 120
+        cinemaRampValue > 120 ||
+        !Number.isInteger(cinemaArrowsValue) ||
+        cinemaArrowsValue < 1 ||
+        cinemaArrowsValue > 3
       ) {
         message = {
           kind: 'bad',
-          text: 'Depth Cinema needs a 0.5–40Δ convergence peak, a 0.5–20Δ divergence peak, and a 5–120 second ramp.',
+          text: 'Depth Cinema needs a 0.5–40Δ convergence peak, a 0.5–20Δ divergence peak, a 5–120 second ramp, and 1–3 moving arrows.',
         }
         render()
         return
@@ -393,6 +403,7 @@ export const settingsScreen: Screen = (root, nav) => {
           convergencePeakPd: cinemaConvergenceValue,
           divergencePeakPd: cinemaDivergenceValue,
           rampSeconds: cinemaRampValue,
+          movingArrowCount: cinemaArrowsValue,
         },
         advancedMode: settings.advancedMode,
       }

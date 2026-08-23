@@ -35,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
     convergencePeakPd: 8,
     divergencePeakPd: 4,
     rampSeconds: 90,
+    movingArrowCount: 2,
   },
   preferredUnit: 'cm',
   advancedMode: false,

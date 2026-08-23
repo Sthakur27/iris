@@ -26,6 +26,14 @@ interface Star {
   phase: number
 }
 
+interface MovingArrow {
+  xPhase: number
+  yPhase: number
+  depthPhase: number
+  directionPhase: number
+  speed: number
+}
+
 const STARS: Star[] = Array.from({ length: 46 }, (_, i) => ({
   x: ((i * 73 + 31) % 997) / 997,
   y: ((i * 137 + 59) % 991) / 991,
@@ -33,6 +41,12 @@ const STARS: Star[] = Array.from({ length: 46 }, (_, i) => ({
   depth: 0.12 + ((i * 29) % 55) / 100,
   phase: (i * 1.618) % (Math.PI * 2),
 }))
+
+const MOVING_ARROWS: MovingArrow[] = [
+  { xPhase: 0.05, yPhase: 0.36, depthPhase: 0.12, directionPhase: 0.2, speed: 0.72 },
+  { xPhase: 0.61, yPhase: 0.08, depthPhase: 0.58, directionPhase: 0.7, speed: 0.49 },
+  { xPhase: 0.31, yPhase: 0.75, depthPhase: 0.87, directionPhase: 0.42, speed: 0.91 },
+]
 
 export const depthCinema: Procedure = {
   id: 'depthCinema',
@@ -89,8 +103,18 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
     { class: 'cinema-control-value' },
     `${requestedPeak.toFixed(1)}Δ`,
   )
+  const arrowsInput = el('input', {
+    type: 'range',
+    min: '1',
+    max: '3',
+    step: '1',
+    value: String(config.movingArrowCount),
+  })
+  arrowsInput.setAttribute('aria-label', 'Moving arrows')
+  const arrowsValue = el('span', { class: 'cinema-control-value' }, String(config.movingArrowCount))
   const speedName = cinemaControlName('[  ]', 'speed')
   const depthName = cinemaControlName('−  +', 'depth')
+  const arrowsName = cinemaControlName(',  .', 'arrows')
   const motionLabel = el('span', { class: 'cinema-action-label' }, 'Pause motion')
   const depthLabel = el('span', { class: 'cinema-action-label' }, 'Hold depth')
   const reverseLabel = el('span', { class: 'cinema-action-label' }, 'Reverse depth')
@@ -117,6 +141,13 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
       depthValue,
     ),
     el(
+      'label',
+      { class: 'cinema-control' },
+      arrowsName,
+      arrowsInput,
+      arrowsValue,
+    ),
+    el(
       'div',
       { class: 'cinema-actions' },
       motionButton,
@@ -137,6 +168,7 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
   let raf = 0
   let speed = 0.5
   let livePeakPd = requestedPeak
+  let arrowCount = config.movingArrowCount
   let motionPaused = false
   let depthPaused = false
   let depthDirection = 1
@@ -155,8 +187,14 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
     depthInput.value = String(livePeakPd)
     depthValue.textContent = `${livePeakPd.toFixed(1)}Δ`
   }
+  const setArrowCount = (value: number): void => {
+    arrowCount = Math.min(3, Math.max(1, Math.round(value)))
+    arrowsInput.value = String(arrowCount)
+    arrowsValue.textContent = String(arrowCount)
+  }
   speedInput.addEventListener('input', () => setSpeed(Number(speedInput.value)))
   depthInput.addEventListener('input', () => setDepth(Number(depthInput.value)))
+  arrowsInput.addEventListener('input', () => setArrowCount(Number(arrowsInput.value)))
   motionButton.setAttribute('aria-pressed', 'false')
   const toggleMotion = (): void => {
     motionPaused = !motionPaused
@@ -199,6 +237,12 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
     } else if (event.code === 'Equal' || event.code === 'NumpadAdd') {
       event.preventDefault()
       setDepth(livePeakPd + 0.5)
+    } else if (event.code === 'Comma') {
+      event.preventDefault()
+      setArrowCount(arrowCount - 1)
+    } else if (event.code === 'Period') {
+      event.preventDefault()
+      setArrowCount(arrowCount + 1)
     } else if (!event.repeat && event.key.toLowerCase() === 'm') {
       event.preventDefault()
       toggleMotion()
@@ -266,6 +310,7 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
       seconds: (config.reversePlayback ? 1 : -1) * (movieMs / 1000),
       disparityPx: prismDioptresToPx(signedDemand, cal),
       redEye: cal.redEye,
+      arrowCount,
     })
 
     const sense = config.direction === 'convergence' ? 'converging' : 'diverging'
@@ -328,6 +373,7 @@ function renderMovieFrame(
     seconds: number
     disparityPx: number
     redEye: EyeSide
+    arrowCount: number
   },
 ): void {
   const g = canvas.getContext('2d')
@@ -351,6 +397,16 @@ function renderMovieFrame(
 
     drawStars(g, STARS, w, h, t, colour, eyeSign, disparityPx)
     drawMoon(g, w, h, t, colour, eyeSign * disparityPx * 0.34)
+    drawMovingArrows(
+      g,
+      MOVING_ARROWS.slice(0, Math.max(1, Math.min(3, opts.arrowCount))),
+      w,
+      h,
+      t,
+      colour,
+      eyeSign,
+      disparityPx,
+    )
 
     // Three gates drift toward the viewer. Their increasing depth factors make the
     // scene genuinely layered while the ship itself carries the displayed demand.
@@ -359,7 +415,16 @@ function renderMovieFrame(
       const radius = 18 + travel * Math.min(w, h) * 0.34
       const alpha = Math.sin(travel * Math.PI) * 0.5
       const depth = 0.42 + travel * 0.42
-      drawGate(g, w / 2, h / 2 + 8, radius, colour, eyeSign * disparityPx * depth * 0.5, alpha)
+      drawGate(
+        g,
+        w / 2,
+        h / 2 + 8,
+        radius,
+        colour,
+        eyeSign * disparityPx * depth * 0.5,
+        alpha,
+        t + i * 1.7,
+      )
     }
 
     drawShip(g, w, h, t, colour, eyeSign * disparityPx * 0.5)
@@ -424,6 +489,48 @@ function drawMoon(
   g.stroke()
 }
 
+function drawMovingArrows(
+  g: CanvasRenderingContext2D,
+  arrows: MovingArrow[],
+  w: number,
+  h: number,
+  t: number,
+  colour: string,
+  eyeSign: number,
+  disparityPx: number,
+): void {
+  const size = Math.max(14, Math.min(w, h) * 0.026)
+  g.strokeStyle = colour
+  g.fillStyle = colour
+  g.lineWidth = Math.max(1.5, size * 0.12)
+
+  for (const arrow of arrows) {
+    // Each arrow gets a different orbit, heading and disparity fraction. This gives
+    // the eyes several simultaneously moving depth planes to fuse, not duplicates.
+    const phase = t * arrow.speed
+    const x = w * (0.34 + 0.32 * wrap01(arrow.xPhase + phase * 0.075))
+    const y = h * (0.35 + 0.3 * (0.5 + Math.sin(phase * 0.93 + arrow.yPhase * Math.PI * 2) * 0.5))
+    const depth = 0.18 + 0.67 * (0.5 + Math.sin(phase * 0.67 + arrow.depthPhase * Math.PI * 2) * 0.5)
+    const heading = phase * 0.68 + arrow.directionPhase * Math.PI * 2
+    const shift = eyeSign * disparityPx * depth * 0.5
+
+    g.save()
+    g.globalAlpha = 0.5 + depth * 0.32
+    g.translate(x + shift, y)
+    g.rotate(heading)
+    g.beginPath()
+    g.moveTo(size * 1.15, 0)
+    g.lineTo(-size * 0.7, -size * 0.7)
+    g.lineTo(-size * 0.28, 0)
+    g.lineTo(-size * 0.7, size * 0.7)
+    g.closePath()
+    g.stroke()
+    g.globalAlpha *= 0.22
+    g.fill()
+    g.restore()
+  }
+}
+
 function drawGate(
   g: CanvasRenderingContext2D,
   x: number,
@@ -432,6 +539,7 @@ function drawGate(
   colour: string,
   shift: number,
   alpha: number,
+  seconds: number,
 ): void {
   g.globalAlpha = alpha
   g.strokeStyle = colour
@@ -439,6 +547,17 @@ function drawGate(
   g.beginPath()
   g.ellipse(x + shift, y, radius * 1.25, radius, 0, 0, Math.PI * 2)
   g.stroke()
+
+  // Tiny bright segments race around the otherwise stable fusion ring. They add
+  // motion information while keeping the ring's centre fixed and easy to fuse.
+  g.globalAlpha = alpha * 1.65
+  g.lineWidth = Math.max(1.5, radius * 0.04)
+  for (let i = 0; i < 3; i++) {
+    const start = wrap01(seconds * 0.34 + i / 3) * Math.PI * 2
+    g.beginPath()
+    g.ellipse(x + shift, y, radius * 1.25, radius, 0, start, start + 0.23)
+    g.stroke()
+  }
 }
 
 function drawShip(
