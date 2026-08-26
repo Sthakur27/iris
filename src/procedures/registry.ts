@@ -8,6 +8,8 @@ import { pursuits } from './pursuits'
 import { saccades } from './saccades'
 import { cyclopeanLetters } from './cyclopeanLetters'
 import { depthCinema } from './depthCinema'
+import { depthSpiral } from './depthSpiral'
+import { depthHelix } from './depthHelix'
 
 /** Single place the session runner resolves a plan step to an implementation. */
 export const PROCEDURE_REGISTRY: Map<ProcedureId, Procedure> = new Map(
@@ -20,5 +22,7 @@ export const PROCEDURE_REGISTRY: Map<ProcedureId, Procedure> = new Map(
     saccades,
     cyclopeanLetters,
     depthCinema,
+    depthSpiral,
+    depthHelix,
   ].map((p) => [p.id, p]),
 )

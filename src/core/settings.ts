@@ -103,6 +103,20 @@ export const DEPTH_CINEMA = {
   seconds: 420,
 }
 
+/** Fixed, lettered square-spiral fusion target inspired by in-clinic vectograms. */
+export const DEPTH_SPIRAL = {
+  id: 'depthSpiral' as const,
+  label: 'Depth Spiral',
+  seconds: 420,
+}
+
+/** Still, manually rotated binocular DNA helix with adjustable depth and view angle. */
+export const DEPTH_HELIX = {
+  id: 'depthHelix' as const,
+  label: 'Depth Helix',
+  seconds: 420,
+}
+
 const SETTINGS_KEY = 'iris.settings.v1'
 const SESSIONS_KEY = 'iris.sessions.v1'
 

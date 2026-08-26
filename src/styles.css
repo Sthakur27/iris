@@ -208,6 +208,9 @@ label {
   bottom: 18px;
   transform: translateX(-50%);
   display: flex;
+  width: calc(100% - 32px);
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
   gap: 22px;
   padding: 0;
@@ -286,7 +289,83 @@ label {
   font-variant-numeric: tabular-nums;
 }
 
+.helix-controls {
+  width: min(940px, calc(100% - 32px));
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px 20px;
+  padding: 10px 12px;
+  border: 1px solid rgba(139, 151, 166, 0.28);
+  border-radius: 10px;
+  background: rgba(3, 7, 18, 0.82);
+  backdrop-filter: blur(8px);
+}
+
+.helix-controls .cinema-control {
+  width: 100%;
+  grid-template-columns: 54px minmax(70px, 1fr) 46px;
+}
+
+.helix-controls .cinema-control input[type='range'] {
+  width: 100%;
+}
+
+.helix-canvas {
+  cursor: grab;
+  touch-action: none;
+}
+
+.helix-canvas:active {
+  cursor: grabbing;
+}
+
+.helix-reset,
+.helix-toggle {
+  min-height: 38px;
+  justify-content: center;
+}
+
+.helix-prompt {
+  bottom: 170px;
+}
+
+.helix-direction {
+  display: grid;
+  grid-template-columns: auto minmax(118px, 150px);
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+@media (max-width: 1040px) and (min-width: 621px) {
+  .helix-controls {
+    width: min(720px, calc(100% - 32px));
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 24px;
+  }
+
+  .helix-controls .cinema-control,
+  .helix-direction {
+    width: 100%;
+  }
+
+  .helix-controls .cinema-control input[type='range'] {
+    width: 100%;
+  }
+
+  .helix-prompt {
+    bottom: 272px;
+  }
+}
+
 @media (max-width: 620px) {
+  .cinema-prompt {
+    bottom: 242px;
+  }
+
   .cinema-controls {
     width: calc(100% - 24px);
     flex-direction: column;
@@ -309,6 +388,24 @@ label {
 
   .cinema-control input[type='range'] {
     width: 100%;
+  }
+
+  .helix-direction {
+    width: 100%;
+    grid-template-columns: 42px 1fr;
+  }
+
+  .helix-controls {
+    display: grid;
+    grid-template-columns: 1fr;
+    max-height: 218px;
+    overflow-y: auto;
+    padding: 9px 10px;
+    background: rgba(3, 7, 18, 0.9);
+  }
+
+  .helix-prompt {
+    bottom: 250px;
   }
 }
 

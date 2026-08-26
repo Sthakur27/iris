@@ -11,6 +11,8 @@ import {
   CYCLOPEAN_LETTERS,
   DAILY_PROTOCOL,
   DEPTH_CINEMA,
+  DEPTH_HELIX,
+  DEPTH_SPIRAL,
   JUMP_DUCTIONS,
   jumpDuctionsUnlocked,
   loadSettings,
@@ -51,7 +53,14 @@ export const sessionScreen: Screen = (root, nav) => {
 
   const plan: PlanStep[] = []
   if (request.mode === 'single') {
-    const known = [...DAILY_PROTOCOL, JUMP_DUCTIONS, CYCLOPEAN_LETTERS, DEPTH_CINEMA].find(
+    const known = [
+      ...DAILY_PROTOCOL,
+      JUMP_DUCTIONS,
+      CYCLOPEAN_LETTERS,
+      DEPTH_CINEMA,
+      DEPTH_SPIRAL,
+      DEPTH_HELIX,
+    ].find(
       (s) => s.id === request.procedureId,
     )
     if (known) {

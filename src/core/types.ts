@@ -9,6 +9,8 @@ export type ProcedureId =
   | 'jumpDuctions'
   | 'cyclopeanLetters'
   | 'depthCinema'
+  | 'depthSpiral'
+  | 'depthHelix'
 
 /** Screen + posture calibration. Everything that converts pixels to clinical units. */
 export interface Calibration {

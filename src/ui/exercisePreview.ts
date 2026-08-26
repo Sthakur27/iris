@@ -52,6 +52,8 @@ const PROCEDURE_IDS: readonly ProcedureId[] = [
   'jumpDuctions',
   'cyclopeanLetters',
   'depthCinema',
+  'depthSpiral',
+  'depthHelix',
 ]
 
 /** `SessionRequest.procedureId` is a bare string, so it has to be re-checked here. */
@@ -209,6 +211,29 @@ function copyFor(id: ProcedureId): Copy {
           'reverse the movie so the scene moves closer. There are no answers to enter.',
         keys: [{ key: 'Just watch', means: 'Keep the ship single and comfortable; pause if it doubles.' }],
       }
+    case 'depthSpiral':
+      return {
+        stimulus:
+          'A fixed square spiral made of lettered nodes, drawn once in red and once in blue. Through the glasses the two copies become one lettered path at the depth you choose.',
+        task:
+          'Keep the path and its letters single. Nothing moves automatically: change the scale only when you want a larger or smaller fixed target, and use the depth control only when ready.',
+        keys: [{ key: '− / +', means: 'Lower or raise the fixed depth.' }],
+      }
+    case 'depthHelix':
+      return {
+        stimulus:
+          'A red-and-blue DNA-like double helix sits diagonally in space, with two twisting rails joined by a ladder of fixed rungs. Through the glasses the nearer parts come forward and the far parts recede.',
+        task:
+          'Keep both rails single. Nothing moves automatically: drag the helix or use separate X, Y, and Z controls to turn it in 3D, zoom it, stretch or compress its length, and hide the cross-lines whenever the picture feels too busy.',
+        keys: [
+          { key: 'Drag', means: 'Rotate freely around the X and Y axes.' },
+          { key: 'X / Y / Z', means: 'Set every rotation axis precisely with its slider.' },
+          { key: 'Wheel / pinch', means: 'Zoom the helix in or out.' },
+          { key: 'Stretch', means: 'Lengthen or compress the helix without changing its overall zoom.' },
+          { key: 'Cross-lines', means: 'Show or hide the connecting lines between the two rails.' },
+          { key: '− / +', means: 'Lower or raise the fixed depth.' },
+        ],
+      }
   }
 }
 
@@ -276,7 +301,92 @@ function draw(id: ProcedureId, cal: Calibration): Drawn {
         caveat:
           'A frozen frame at a gentle 2Δ. The exercise animates continuously and uses its own direction, peak, and ramp time from Settings.',
       }
+    case 'depthSpiral':
+      paintSpiralPreview(canvas, cal)
+      return {
+        canvas,
+        caveat: 'Illustration only. The exercise itself is a fixed, lettered square spiral; it changes only when you adjust its scale or depth.',
+      }
+    case 'depthHelix':
+      paintHelixPreview(canvas, cal)
+      return {
+        canvas,
+        caveat: 'A frozen frame at a gentle 2Δ. The exercise stays equally still and changes only when you rotate, zoom, or adjust depth.',
+      }
   }
+}
+
+function paintHelixPreview(canvas: HTMLCanvasElement, cal: Calibration): void {
+  const g = blankCanvas(canvas)
+  if (!g) return
+  const disparity = prismDioptresToPx(2, cal)
+  const samples = 54
+  const point = (u: number, strand: number): { x: number; y: number; d: number } => {
+    const along = (u - 0.5) * 290
+    const theta = u * Math.PI * 6.5 + 0.45 + strand * Math.PI
+    const radial = Math.cos(theta) * 31
+    const z = Math.sin(theta) * 31 + along * 0.18
+    return {
+      x: PREVIEW_WIDTH_PX / 2 + along * 0.94 + radial * 0.31,
+      y: PREVIEW_HEIGHT_PX / 2 - along * 0.25 + radial * 0.95,
+      d: Math.max(0.1, Math.min(1, 0.5 + z / 150)),
+    }
+  }
+  for (const eye of ['left', 'right'] as const) {
+    const colour = eye === cal.redEye ? RED : BLUE
+    const sign = eye === 'left' ? 1 : -1
+    g.strokeStyle = colour
+    g.fillStyle = colour
+    for (let rung = 0; rung <= 12; rung++) {
+      const u = 0.04 + rung / 12 * 0.92
+      const a = point(u, 0); const b = point(u, 1)
+      g.globalAlpha = 0.38
+      g.lineWidth = 1.2
+      g.beginPath(); g.moveTo(a.x + sign * disparity * a.d * 0.5, a.y); g.lineTo(b.x + sign * disparity * b.d * 0.5, b.y); g.stroke()
+    }
+    for (let strand = 0; strand < 2; strand++) {
+      g.globalAlpha = 0.82
+      g.lineWidth = 3
+      g.beginPath()
+      for (let i = 0; i <= samples; i++) {
+        const p = point(i / samples, strand)
+        const x = p.x + sign * disparity * p.d * 0.5
+        if (i === 0) g.moveTo(x, p.y); else g.lineTo(x, p.y)
+      }
+      g.stroke()
+    }
+  }
+  g.globalAlpha = 1
+}
+
+function paintSpiralPreview(canvas: HTMLCanvasElement, cal: Calibration): void {
+  const g = blankCanvas(canvas)
+  if (!g) return
+  const points: Array<[number, number]> = [
+    [-.45, -.43], [.45, -.43], [.45, .43], [-.45, .43], [-.45, -.25],
+    [.27, -.25], [.27, .25], [-.27, .25], [-.27, -.09], [.09, -.09], [.09, .09], [-.09, .09], [-.09, 0], [0, 0],
+  ]
+  const letters = 'BJUMHIDPVAZFSOCWG NQKYE'.replaceAll(' ', '')
+  const disparity = prismDioptresToPx(2, cal)
+  for (const eye of ['left', 'right'] as const) {
+    const shift = (eye === 'left' ? 1 : -1) * disparity * 0.5
+    g.save()
+    g.translate(PREVIEW_WIDTH_PX / 2 + shift, PREVIEW_HEIGHT_PX / 2)
+    g.strokeStyle = eye === cal.redEye ? RED : BLUE
+    g.fillStyle = g.strokeStyle
+    g.globalAlpha = .86
+    g.lineWidth = 3
+    g.beginPath()
+    points.forEach(([x, y], i) => i ? g.lineTo(x * 130, y * 130) : g.moveTo(x * 130, y * 130))
+    g.stroke()
+    points.forEach(([x, y], i) => {
+      const px = x * 130; const py = y * 130
+      g.globalAlpha = .95; g.beginPath(); g.arc(px, py, 8, 0, Math.PI * 2); g.stroke()
+      g.font = '600 9px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(letters[i] ?? '•', px, py)
+    })
+    g.restore()
+  }
+  g.globalAlpha = 1
 }
 
 function paintCinemaPreview(canvas: HTMLCanvasElement, cal: Calibration): void {
@@ -503,6 +613,75 @@ function paintRock(canvas: HTMLCanvasElement): void {
 
 /* ------------------------------------------------------------------ public */
 
+function depthCinemaSettingsPreview(
+  settings: Settings,
+  onSettingsChange: (settings: Settings) => void,
+): HTMLElement {
+  const cinema = settings.depthCinema
+  const direction = el('select')
+  direction.append(
+    el('option', { value: 'convergence' }, 'Convergence — inward'),
+    el('option', { value: 'divergence' }, 'Divergence — outward'),
+  )
+  direction.value = cinema.direction
+  const reverse = el('input', { type: 'checkbox', checked: cinema.reversePlayback })
+  const convergencePeak = previewNumberInput(cinema.convergencePeakPd, 0.5, 40, 0.5)
+  const divergencePeak = previewNumberInput(cinema.divergencePeakPd, 0.5, 20, 0.5)
+  const ramp = previewNumberInput(cinema.rampSeconds, 5, 120, 1)
+  const arrows = previewNumberInput(cinema.movingArrowCount, 1, 3, 1)
+  const commit = (): void => {
+    const next = {
+      ...settings,
+      depthCinema: {
+        direction: direction.value === 'divergence' ? ('divergence' as const) : ('convergence' as const),
+        reversePlayback: reverse.checked,
+        convergencePeakPd: clampPreviewValue(Number(convergencePeak.value), 0.5, 40, cinema.convergencePeakPd),
+        divergencePeakPd: clampPreviewValue(Number(divergencePeak.value), 0.5, 20, cinema.divergencePeakPd),
+        rampSeconds: clampPreviewValue(Number(ramp.value), 5, 120, cinema.rampSeconds),
+        movingArrowCount: Math.round(clampPreviewValue(Number(arrows.value), 1, 3, cinema.movingArrowCount)),
+      },
+    }
+    onSettingsChange(next)
+  }
+  direction.addEventListener('change', commit)
+  reverse.addEventListener('change', commit)
+  for (const input of [convergencePeak, divergencePeak, ramp, arrows]) {
+    input.addEventListener('change', commit)
+  }
+  return el(
+    'section',
+    { class: 'preview-settings' },
+    el('h3', { class: 'preview-heading' }, 'Depth Cinema settings for this session'),
+    previewSettingField('Direction', direction),
+    el('label', { class: 'toggle-row' }, reverse, el('span', {}, 'Play in reverse — moving closer')),
+    el(
+      'div',
+      { class: 'grid-2' },
+      previewSettingField('Convergence peak (Δ)', convergencePeak),
+      previewSettingField('Divergence peak (Δ)', divergencePeak),
+    ),
+    el(
+      'div',
+      { class: 'grid-2' },
+      previewSettingField('Time to peak (seconds)', ramp),
+      previewSettingField('Moving arrows (1–3)', arrows),
+    ),
+    el('p', { class: 'gloss' }, 'Changes save immediately and will be used when you start this session.'),
+  )
+}
+
+function previewNumberInput(value: number, min: number, max: number, step: number): HTMLInputElement {
+  return el('input', { type: 'number', value: String(value), min: String(min), max: String(max), step: String(step) })
+}
+
+function previewSettingField(label: string, input: HTMLElement): HTMLElement {
+  return el('label', { class: 'field' }, el('span', {}, label), input)
+}
+
+function clampPreviewValue(value: number, min: number, max: number, fallback: number): number {
+  return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback
+}
+
 /**
  * The whole preview block, ready to append. `planNote` is the "and then the rest of
  * the plan" line, which only a plan session has.
@@ -512,6 +691,7 @@ export function exercisePreviewCard(opts: {
   label: string
   settings: Settings
   planNote: string | null
+  onSettingsChange: (settings: Settings) => void
 }): HTMLElement {
   const copy = copyFor(opts.procedureId)
   const drawn = draw(opts.procedureId, opts.settings.calibration)
@@ -527,6 +707,10 @@ export function exercisePreviewCard(opts: {
     el('p', {}, copy.stimulus),
     el('p', {}, copy.task),
   )
+
+  if (opts.procedureId === 'depthCinema') {
+    card.append(depthCinemaSettingsPreview(opts.settings, opts.onSettingsChange))
+  }
 
   const keys = el('ul', { class: 'preview-keys' })
   for (const line of copy.keys) {

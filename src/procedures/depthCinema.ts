@@ -1,4 +1,4 @@
-import type { EyeSide } from '../core/types'
+import type { Calibration, EyeSide } from '../core/types'
 import type { Procedure, ProcedureContext } from './base'
 import { createElapsedClock } from './base'
 import { prismDioptresToPx } from '../core/geometry'
@@ -17,6 +17,9 @@ import { el } from '../ui/router'
 const RED = '#ff2b2b'
 const BLUE = '#2b6bff'
 const RELAX_FRACTION = 0.35
+const ASSUMED_IPD_CM = 6.3
+const CM_PER_INCH = 2.54
+const BACKMOST_SCENE_DEPTH = 0.12
 
 interface Star {
   x: number
@@ -64,6 +67,7 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
   const requestedPeak =
     config.direction === 'convergence' ? config.convergencePeakPd : config.divergencePeakPd
   const maximumPeak = config.direction === 'convergence' ? 40 : 20
+  const targetPeakPd = Math.min(maximumPeak, Math.max(0.5, requestedPeak))
 
   const stage = el('div', { class: 'stage cinema-stage' })
   const frame = el('div', { class: 'cinema-frame' })
@@ -72,9 +76,10 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
 
   const hud = el('div', { class: 'stage-hud' })
   const hudDemand = el('span')
+  const hudDistance = el('span')
   const hudDirection = el('span')
   const hudClock = el('span')
-  hud.append(hudDemand, hudDirection, hudClock)
+  hud.append(hudDemand, hudDistance, hudDirection, hudClock)
 
   const prompt = el(
     'div',
@@ -93,17 +98,13 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
   const speedValue = el('span', { class: 'cinema-control-value' }, '0.50×')
   const depthInput = el('input', {
     type: 'range',
-    min: '0.5',
-    max: String(maximumPeak),
-    step: '0.5',
-    value: String(requestedPeak),
+    min: '0',
+    max: String(targetPeakPd),
+    step: '0.1',
+    value: '0',
   })
-  depthInput.setAttribute('aria-label', 'Maximum depth')
-  const depthValue = el(
-    'span',
-    { class: 'cinema-control-value' },
-    `${requestedPeak.toFixed(1)}Δ`,
-  )
+  depthInput.setAttribute('aria-label', 'Current automatic depth')
+  const depthValue = el('span', { class: 'cinema-control-value' }, '0.0Δ')
   const arrowsInput = el('input', {
     type: 'range',
     min: '1',
@@ -113,9 +114,20 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
   })
   arrowsInput.setAttribute('aria-label', 'Moving arrows')
   const arrowsValue = el('span', { class: 'cinema-control-value' }, String(config.movingArrowCount))
+  const depthRangeInput = el('input', {
+    type: 'range',
+    min: '0',
+    max: '15',
+    step: '0.1',
+    value: '2.5',
+  })
+  depthRangeInput.setAttribute('aria-label', 'Scene depth range in inches')
+  depthRangeInput.setAttribute('aria-valuetext', '2.5 inches')
+  const depthRangeValue = el('span', { class: 'cinema-control-value' }, '2.5 in')
   const speedName = cinemaControlName('[  ]', 'speed')
-  const depthName = cinemaControlName('−  +', 'depth')
+  const depthName = cinemaControlName('−  +', 'current depth')
   const arrowsName = cinemaControlName(',  .', 'arrows')
+  const depthRangeName = cinemaControlName(';  ’', 'depth range')
   const motionLabel = el('span', { class: 'cinema-action-label' }, 'Pause motion')
   const depthLabel = el('span', { class: 'cinema-action-label' }, 'Hold depth')
   const reverseLabel = el('span', { class: 'cinema-action-label' }, 'Reverse depth')
@@ -149,6 +161,13 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
       arrowsValue,
     ),
     el(
+      'label',
+      { class: 'cinema-control' },
+      depthRangeName,
+      depthRangeInput,
+      depthRangeValue,
+    ),
+    el(
       'div',
       { class: 'cinema-actions' },
       motionButton,
@@ -167,8 +186,9 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
   let dpr = 1
   let raf = 0
   let speed = 0.5
-  let livePeakPd = requestedPeak
+  let currentDemandPd = 0
   let arrowCount = config.movingArrowCount
+  let depthRangeInches = 2.5
   let motionPaused = false
   let depthPaused = false
   let depthDirection = 1
@@ -180,21 +200,20 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
     speedInput.value = String(speed)
     speedValue.textContent = `${speed.toFixed(2)}×`
   }
-  const setDepth = (value: number): void => {
-    const min = Number(depthInput.min)
-    const max = Number(depthInput.max)
-    livePeakPd = Math.min(max, Math.max(min, value))
-    depthInput.value = String(livePeakPd)
-    depthValue.textContent = `${livePeakPd.toFixed(1)}Δ`
-  }
   const setArrowCount = (value: number): void => {
     arrowCount = Math.min(3, Math.max(1, Math.round(value)))
     arrowsInput.value = String(arrowCount)
     arrowsValue.textContent = String(arrowCount)
   }
+  const setDepthRange = (value: number): void => {
+    depthRangeInches = Math.min(15, Math.max(0, value))
+    depthRangeInput.value = String(depthRangeInches)
+    depthRangeInput.setAttribute('aria-valuetext', `${depthRangeInches.toFixed(1)} inches`)
+    depthRangeValue.textContent = `${depthRangeInches.toFixed(1)} in`
+  }
   speedInput.addEventListener('input', () => setSpeed(Number(speedInput.value)))
-  depthInput.addEventListener('input', () => setDepth(Number(depthInput.value)))
   arrowsInput.addEventListener('input', () => setArrowCount(Number(arrowsInput.value)))
+  depthRangeInput.addEventListener('input', () => setDepthRange(Number(depthRangeInput.value)))
   motionButton.setAttribute('aria-pressed', 'false')
   const toggleMotion = (): void => {
     motionPaused = !motionPaused
@@ -233,16 +252,22 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
       setSpeed(speed + 0.05)
     } else if (event.code === 'Minus' || event.code === 'NumpadSubtract') {
       event.preventDefault()
-      setDepth(livePeakPd - 0.5)
+      setCurrentDepth(currentDemandPd - 0.1)
     } else if (event.code === 'Equal' || event.code === 'NumpadAdd') {
       event.preventDefault()
-      setDepth(livePeakPd + 0.5)
+      setCurrentDepth(currentDemandPd + 0.1)
     } else if (event.code === 'Comma') {
       event.preventDefault()
       setArrowCount(arrowCount - 1)
     } else if (event.code === 'Period') {
       event.preventDefault()
       setArrowCount(arrowCount + 1)
+    } else if (event.code === 'Semicolon') {
+      event.preventDefault()
+      setDepthRange(depthRangeInches - 0.1)
+    } else if (event.code === 'Quote') {
+      event.preventDefault()
+      setDepthRange(depthRangeInches + 0.1)
     } else if (!event.repeat && event.key.toLowerCase() === 'm') {
       event.preventDefault()
       toggleMotion()
@@ -268,9 +293,6 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
     canvas.style.width = `${width}px`
     canvas.style.height = `${height}px`
 
-    livePeakPd = Math.min(livePeakPd, maximumPeak)
-    depthInput.value = String(livePeakPd)
-    depthValue.textContent = `${livePeakPd.toFixed(1)}Δ`
   }
   window.addEventListener('resize', resize)
   resize()
@@ -282,6 +304,19 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
   let depthMs = 0
   let lastElapsedMs = elapsed.ms()
 
+  const setCurrentDepth = (value: number): void => {
+    currentDemandPd = Math.min(targetPeakPd, Math.max(0, value))
+    const progress = targetPeakPd === 0 ? 0 : currentDemandPd / targetPeakPd
+    const raw = inverseSmoothStep(progress)
+    const inCycle = wrapMs(depthMs, cycleMs)
+    // Keep the current half of the loop: a rising ramp continues rising, while
+    // a returning ramp continues easing home after the user releases the slider.
+    depthMs = inCycle <= rampMs ? raw * rampMs : rampMs + (1 - raw) * relaxMs
+    depthInput.value = String(currentDemandPd)
+    depthValue.textContent = `${currentDemandPd.toFixed(1)}Δ`
+  }
+  depthInput.addEventListener('input', () => setCurrentDepth(Number(depthInput.value)))
+
   const draw = (): void => {
     const elapsedMs = elapsed.ms()
     const deltaMs = Math.max(0, elapsedMs - lastElapsedMs) * speed
@@ -292,8 +327,10 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
     const rising = inCycle <= rampMs
     const raw = rising ? inCycle / rampMs : 1 - (inCycle - rampMs) / relaxMs
     const progress = smoothStep(Math.max(0, Math.min(1, raw)))
-    const peak = Math.max(0.5, Math.min(livePeakPd, maximumPeak))
-    const demand = peak * progress
+    const demand = targetPeakPd * progress
+    currentDemandPd = demand
+    depthInput.value = String(demand)
+    depthValue.textContent = `${demand.toFixed(1)}Δ`
     const signedDemand = sign * demand
 
     renderMovieFrame(canvas, {
@@ -303,13 +340,16 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
       // Forward playback recedes into the scene; reverse playback approaches the
       // viewer. Prism demand remains governed by the independent depth envelope.
       seconds: (config.reversePlayback ? 1 : -1) * (movieMs / 1000),
-      disparityPx: prismDioptresToPx(signedDemand, cal),
+      signedDemandPd: signedDemand,
+      calibration: cal,
       redEye: cal.redEye,
       arrowCount,
+      depthRangeInches,
     })
 
     const sense = config.direction === 'convergence' ? 'converging' : 'diverging'
     hudDemand.textContent = `${demand.toFixed(1)}Δ ${sense}`
+    hudDistance.textContent = simulatedDistanceLabel(demand, config.direction, cal.viewingDistanceCm)
     const travel = config.reversePlayback ? 'moving closer' : 'moving deeper'
     const depthState = depthPaused ? 'depth held' : depthDirection < 0 ? 'depth returning' : rising ? 'depth increasing' : 'depth easing home'
     hudDirection.textContent = `${travel} · ${depthState}`
@@ -355,8 +395,66 @@ function smoothStep(t: number): number {
   return t * t * (3 - 2 * t)
 }
 
+function inverseSmoothStep(value: number): number {
+  const target = Math.max(0, Math.min(1, value))
+  let low = 0
+  let high = 1
+  // smoothStep is monotonic on this interval, so a small binary search is more
+  // than accurate enough to place the automatic envelope at a dragged value.
+  for (let i = 0; i < 18; i++) {
+    const middle = (low + high) / 2
+    if (smoothStep(middle) < target) low = middle
+    else high = middle
+  }
+  return (low + high) / 2
+}
+
+function simulatedDistanceLabel(
+  demandPd: number,
+  direction: 'convergence' | 'divergence',
+  screenDistanceCm: number,
+): string {
+  // This is an intuitive screen-plane-relative estimate, not a clinical measure.
+  // The app has no user IPD input, so it uses an adult-average 63 mm IPD.
+  const screenVergencePd = (100 * ASSUMED_IPD_CM) / screenDistanceCm
+  const virtualVergencePd =
+    direction === 'convergence' ? screenVergencePd + demandPd : screenVergencePd - demandPd
+  if (virtualVergencePd <= 0.15) return 'virtual target: beyond ∞'
+  const distanceCm = (100 * ASSUMED_IPD_CM) / virtualVergencePd
+  return `virtual target: ≈${(distanceCm / CM_PER_INCH).toFixed(1)} in`
+}
+
 function wrapMs(value: number, length: number): number {
   return ((value % length) + length) % length
+}
+
+function createLayerDisparity(
+  frontDemandPd: number,
+  rangeInches: number,
+  cal: Calibration,
+): (sceneDepth: number) => number {
+  const screenVergencePd = (100 * ASSUMED_IPD_CM) / cal.viewingDistanceCm
+  const frontVergencePd = screenVergencePd + frontDemandPd
+  const frontDisparityPx = prismDioptresToPx(frontDemandPd, cal)
+
+  // A target at or beyond optical infinity has no meaningful "further behind"
+  // position. Keep the scene together there instead of inventing a depth reversal.
+  if (frontVergencePd <= 0.15) return () => frontDisparityPx
+
+  const frontDistanceCm = (100 * ASSUMED_IPD_CM) / frontVergencePd
+  const rangeCm = rangeInches * CM_PER_INCH
+  return (sceneDepth: number): number => {
+    // The original scene uses 0.12 as its farthest layer and 1 as the ship/front.
+    // Normalizing that interval makes the visible front-to-back span match the
+    // slider: at 15 in, the backmost star is fifteen virtual inches behind the ship.
+    const position = Math.min(
+      1,
+      Math.max(0, (sceneDepth - BACKMOST_SCENE_DEPTH) / (1 - BACKMOST_SCENE_DEPTH)),
+    )
+    const layerDistanceCm = frontDistanceCm + (1 - position) * rangeCm
+    const layerVergencePd = (100 * ASSUMED_IPD_CM) / layerDistanceCm
+    return prismDioptresToPx(layerVergencePd - screenVergencePd, cal)
+  }
 }
 
 function renderMovieFrame(
@@ -366,14 +464,22 @@ function renderMovieFrame(
     height: number
     dpr: number
     seconds: number
-    disparityPx: number
+    signedDemandPd: number
+    calibration: Calibration
     redEye: EyeSide
     arrowCount: number
+    depthRangeInches: number
   },
 ): void {
   const g = canvas.getContext('2d')
   if (!g) return
-  const { width: w, height: h, dpr, seconds: t, disparityPx } = opts
+  const { width: w, height: h, dpr, seconds: t } = opts
+  const disparityPx = prismDioptresToPx(opts.signedDemandPd, opts.calibration)
+  const layerDisparityPx = createLayerDisparity(
+    opts.signedDemandPd,
+    opts.depthRangeInches,
+    opts.calibration,
+  )
   g.setTransform(dpr, 0, 0, dpr, 0, 0)
   g.clearRect(0, 0, w, h)
 
@@ -390,8 +496,8 @@ function renderMovieFrame(
     const colour = eye === opts.redEye ? RED : BLUE
     const eyeSign = eye === 'left' ? 1 : -1
 
-    drawStars(g, STARS, w, h, t, colour, eyeSign, disparityPx)
-    drawMoon(g, w, h, t, colour, eyeSign * disparityPx * 0.34)
+    drawStars(g, STARS, w, h, t, colour, eyeSign, layerDisparityPx)
+    drawMoon(g, w, h, t, colour, eyeSign * layerDisparityPx(0.68) * 0.5)
     drawMovingArrows(
       g,
       MOVING_ARROWS.slice(0, Math.max(1, Math.min(3, opts.arrowCount))),
@@ -400,11 +506,12 @@ function renderMovieFrame(
       t,
       colour,
       eyeSign,
-      disparityPx,
+      layerDisparityPx,
     )
 
     // Three gates drift toward the viewer. Their increasing depth factors make the
     // scene genuinely layered while the ship itself carries the displayed demand.
+    // The range control stretches only these relative layers, never that headline.
     for (let i = 0; i < 3; i++) {
       const travel = wrap01(t * 0.085 + i / 3)
       const radius = 18 + travel * Math.min(w, h) * 0.34
@@ -416,7 +523,7 @@ function renderMovieFrame(
         h / 2 + 8,
         radius,
         colour,
-        eyeSign * disparityPx * depth * 0.5,
+        eyeSign * layerDisparityPx(depth) * 0.5,
         alpha,
         t + i * 1.7,
       )
@@ -443,12 +550,12 @@ function drawStars(
   t: number,
   colour: string,
   eyeSign: number,
-  disparityPx: number,
+  layerDisparityPx: (sceneDepth: number) => number,
 ): void {
   g.fillStyle = colour
   for (const star of stars) {
     const drift = wrap01(star.x + t * (0.002 + star.depth * 0.0025))
-    const x = drift * w + eyeSign * disparityPx * star.depth * 0.5
+    const x = drift * w + eyeSign * layerDisparityPx(star.depth) * 0.5
     const y = star.y * h + Math.sin(t * 0.35 + star.phase) * 3
     g.globalAlpha = 0.18 + star.depth * 0.38
     g.beginPath()
@@ -492,7 +599,7 @@ function drawMovingArrows(
   t: number,
   colour: string,
   eyeSign: number,
-  disparityPx: number,
+  layerDisparityPx: (sceneDepth: number) => number,
 ): void {
   const size = Math.max(14, Math.min(w, h) * 0.026)
   g.strokeStyle = colour
@@ -507,7 +614,7 @@ function drawMovingArrows(
     const y = h * (0.35 + 0.3 * (0.5 + Math.sin(phase * 0.93 + arrow.yPhase * Math.PI * 2) * 0.5))
     const depth = 0.18 + 0.67 * (0.5 + Math.sin(phase * 0.67 + arrow.depthPhase * Math.PI * 2) * 0.5)
     const heading = phase * 0.68 + arrow.directionPhase * Math.PI * 2
-    const shift = eyeSign * disparityPx * depth * 0.5
+    const shift = eyeSign * layerDisparityPx(depth) * 0.5
 
     g.save()
     g.globalAlpha = 0.5 + depth * 0.32

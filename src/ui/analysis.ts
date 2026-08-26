@@ -38,6 +38,8 @@ export const PROCEDURE_LABELS: Record<ProcedureId, string> = {
   jumpDuctions: 'Jump Ductions',
   cyclopeanLetters: 'Cyclopean Letters',
   depthCinema: 'Depth Cinema',
+  depthSpiral: 'Depth Spiral',
+  depthHelix: 'Depth Helix',
 }
 
 export type DemandUnit = 'pd' | 'level' | 'none'
@@ -56,6 +58,8 @@ export function demandUnit(id: ProcedureId): DemandUnit {
     case 'pursuits':
     case 'saccades':
     case 'depthCinema':
+    case 'depthSpiral':
+    case 'depthHelix':
       return 'none'
   }
 }

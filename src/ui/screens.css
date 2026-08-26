@@ -647,6 +647,39 @@ input[type='range'] {
   margin-top: 18px;
 }
 
+.preview-settings {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+}
+
+.preview-settings .preview-heading {
+  margin-top: 0;
+}
+
+.preview-settings-list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.preview-settings-list dt {
+  color: var(--text-dim);
+}
+
+.preview-settings-list dd {
+  margin: 0;
+  font-family: var(--mono);
+}
+
+.preview-settings .gloss {
+  margin: 12px 0 0;
+}
+
 .preview-keys {
   list-style: none;
   margin: 0;

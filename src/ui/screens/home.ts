@@ -19,10 +19,13 @@ import {
   CYCLOPEAN_LETTERS,
   DAILY_PROTOCOL,
   DEPTH_CINEMA,
+  DEPTH_HELIX,
+  DEPTH_SPIRAL,
   JUMP_DUCTIONS,
   jumpDuctionsUnlocked,
   loadSessions,
   loadSettings,
+  saveSettings,
 } from '../../core/settings'
 import { canStartSession, sessionAdvisory, sessionsToday } from '../../core/safety'
 import { exercisePreviewCard, toProcedureId } from '../exercisePreview'
@@ -203,6 +206,8 @@ export const homeScreen: Screen = (root, nav) => {
     // Experimental, ungated, self-guided only — deliberately not in DAILY_PROTOCOL.
     list.push(CYCLOPEAN_LETTERS)
     list.push(DEPTH_CINEMA)
+    list.push(DEPTH_SPIRAL)
+    list.push(DEPTH_HELIX)
     return list
   }
 
@@ -551,6 +556,11 @@ export const homeScreen: Screen = (root, nav) => {
           ? `${step.label} is where the session opens. It then moves through the rest of the plan in ` +
             'order, and each exercise explains itself as it starts.'
           : null,
+      onSettingsChange: (next) => {
+        settings = next
+        saveSettings(settings)
+        render()
+      },
     })
   }
 
