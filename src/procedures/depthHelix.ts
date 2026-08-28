@@ -94,6 +94,11 @@ export const depthHelix: Procedure = {
     const resetButton = el('button', { class: 'cinema-action helix-reset', type: 'button' }, 'Reset view')
     const tracePauseButton = el('button', { class: 'cinema-action', type: 'button' }, 'Pause trace')
     const traceReverseButton = el('button', { class: 'cinema-action', type: 'button' }, 'Reverse trace')
+    const controlsToggle = el(
+      'button',
+      { class: 'cinema-action helix-controls-toggle', type: 'button' },
+      'Show controls ↑',
+    )
     const rotationXButton = axisRotationButton('X')
     const rotationYButton = axisRotationButton('Y')
     const rotationZButton = axisRotationButton('Z')
@@ -101,7 +106,8 @@ export const depthHelix: Procedure = {
     traceReverseButton.setAttribute('aria-pressed', 'false')
     const controls = el(
       'div',
-      { class: 'cinema-controls helix-controls' },
+      { class: 'cinema-controls helix-controls is-collapsed', id: 'helix-controls' },
+      controlsToggle,
       el('div', { class: 'cinema-control' }, rotationXButton, rotationXInput, rotationXValue),
       el('div', { class: 'cinema-control' }, rotationYButton, rotationYInput, rotationYValue),
       el('div', { class: 'cinema-control' }, rotationZButton, rotationZInput, rotationZValue),
@@ -116,6 +122,9 @@ export const depthHelix: Procedure = {
       rungsButton,
       resetButton,
     )
+    controlsToggle.setAttribute('aria-controls', 'helix-controls')
+    controlsToggle.setAttribute('aria-expanded', 'false')
+    prompt.classList.add('controls-collapsed')
     stage.append(canvas, hud, prompt, controls)
     ctx.root.append(stage)
 
@@ -236,6 +245,12 @@ export const depthHelix: Procedure = {
     }
     rungsButton.addEventListener('click', toggleRungs)
     resetButton.addEventListener('click', resetView)
+    controlsToggle.addEventListener('click', () => {
+      const collapsed = controls.classList.toggle('is-collapsed')
+      prompt.classList.toggle('controls-collapsed', collapsed)
+      controlsToggle.setAttribute('aria-expanded', String(!collapsed))
+      controlsToggle.textContent = collapsed ? 'Show controls ↑' : 'Hide controls ↓'
+    })
     rotationXButton.addEventListener('click', () => {
       autoRotateX = !autoRotateX
       updateAxisButtons()

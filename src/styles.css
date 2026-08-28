@@ -301,6 +301,32 @@ label {
   backdrop-filter: blur(8px);
 }
 
+.helix-controls-toggle {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  min-height: 34px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.helix-controls.is-collapsed {
+  width: auto;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.helix-controls.is-collapsed > :not(.helix-controls-toggle) {
+  display: none;
+}
+
+.helix-controls.is-collapsed .helix-controls-toggle {
+  position: static;
+}
+
 .helix-controls .cinema-control {
   width: 100%;
   grid-template-columns: 54px minmax(70px, 1fr) 46px;
@@ -336,7 +362,11 @@ label {
 }
 
 .helix-prompt {
-  bottom: 225px;
+  bottom: 280px;
+}
+
+.helix-prompt.controls-collapsed {
+  bottom: 72px;
 }
 
 .helix-direction {
@@ -367,7 +397,11 @@ label {
   }
 
   .helix-prompt {
-    bottom: 330px;
+    bottom: 390px;
+  }
+
+  .helix-prompt.controls-collapsed {
+    bottom: 72px;
   }
 }
 
@@ -414,8 +448,19 @@ label {
     background: rgba(3, 7, 18, 0.9);
   }
 
+  .helix-controls:not(.is-collapsed) .helix-controls-toggle {
+    position: sticky;
+    top: 0;
+    grid-column: 1;
+    z-index: 2;
+  }
+
   .helix-prompt {
     bottom: 250px;
+  }
+
+  .helix-prompt.controls-collapsed {
+    bottom: 72px;
   }
 }
 
