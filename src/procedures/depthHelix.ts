@@ -302,30 +302,17 @@ export const depthHelix: Procedure = {
     window.addEventListener('resize', resize)
     resize()
 
-    let clockRaf = 0
-    let previousFrameMs: number | null = null
-    const tick = (frameMs: number): void => {
-      const rawDeltaMs = previousFrameMs === null ? 0 : Math.max(0, frameMs - previousFrameMs)
-      previousFrameMs = frameMs
-      // Drive visual motion from requestAnimationFrame's monotonic timestamp.
-      // The therapy clock is for elapsed-session reporting and may intentionally
-      // stop; using it as a frame clock made the axis controls appear inert when
-      // that shared clock was paused. Cap resume gaps so nothing jumps forward.
-      const deltaMs = document.hidden || isTherapyPaused() ? 0 : Math.min(100, rawDeltaMs)
-      if (!tracePaused) {
-        // At 1×, one end-to-end pass takes 30 seconds. Bounce at each endpoint
-        // instead of jumping across the helix and forcing an abrupt vergence step.
-        traceProgress += traceDirection * (deltaMs / 30_000) * traceSpeed
-        if (traceProgress >= 1) {
-          traceProgress = 1
-          traceDirection = -1
-          updateTraceButtons()
-        } else if (traceProgress <= 0) {
-          traceProgress = 0
-          traceDirection = 1
-          updateTraceButtons()
-        }
-      }
+    // Keep axis automation independent from the guided trace's animation frame.
+    // This timer updates the actual range inputs, so an active axis always has a
+    // visible, inspectable sweep even if requestAnimationFrame is throttled by the
+    // browser or hosting surface.
+    let previousRotationMs = performance.now()
+    const rotationTimer = window.setInterval(() => {
+      const now = performance.now()
+      const deltaMs = Math.min(100, Math.max(0, now - previousRotationMs))
+      previousRotationMs = now
+      if (isTherapyPaused() || (!autoRotateX && !autoRotateY && !autoRotateZ)) return
+
       const rotationStep = (deltaMs / 1000) * AUTO_ROTATION_DEGREES_PER_SECOND
       if (autoRotateX) {
         autoRotateXDirection = advanceAxisRotation(
@@ -351,8 +338,34 @@ export const depthHelix: Procedure = {
           rotationStep,
         )
       }
-      if (autoRotateX || autoRotateY || autoRotateZ) update()
-      else render()
+      update()
+    }, 50)
+
+    let clockRaf = 0
+    let previousFrameMs: number | null = null
+    const tick = (frameMs: number): void => {
+      const rawDeltaMs = previousFrameMs === null ? 0 : Math.max(0, frameMs - previousFrameMs)
+      previousFrameMs = frameMs
+      // Drive visual motion from requestAnimationFrame's monotonic timestamp.
+      // The therapy clock is for elapsed-session reporting and may intentionally
+      // stop; using it as a frame clock made the axis controls appear inert when
+      // that shared clock was paused. Cap resume gaps so nothing jumps forward.
+      const deltaMs = isTherapyPaused() ? 0 : Math.min(100, rawDeltaMs)
+      if (!tracePaused) {
+        // At 1×, one end-to-end pass takes 30 seconds. Bounce at each endpoint
+        // instead of jumping across the helix and forcing an abrupt vergence step.
+        traceProgress += traceDirection * (deltaMs / 30_000) * traceSpeed
+        if (traceProgress >= 1) {
+          traceProgress = 1
+          traceDirection = -1
+          updateTraceButtons()
+        } else if (traceProgress <= 0) {
+          traceProgress = 0
+          traceDirection = 1
+          updateTraceButtons()
+        }
+      }
+      render()
       clockRaf = requestAnimationFrame(tick)
     }
     clockRaf = requestAnimationFrame(tick)
@@ -363,6 +376,7 @@ export const depthHelix: Procedure = {
       })
     } finally {
       cancelAnimationFrame(clockRaf)
+      window.clearInterval(rotationTimer)
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', resize)
       canvas.removeEventListener('pointerdown', onPointerDown)
