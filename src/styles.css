@@ -310,6 +310,16 @@ label {
   width: 100%;
 }
 
+.helix-axis-motion {
+  width: 54px;
+  min-width: 0;
+  flex-direction: row;
+  justify-content: center;
+  padding: 6px 4px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
 .helix-canvas {
   cursor: grab;
   touch-action: none;

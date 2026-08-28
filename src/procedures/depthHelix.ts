@@ -7,6 +7,7 @@ import { el } from '../ui/router'
 const RED = '#ff2b2b'
 const BLUE = '#2b6bff'
 const TAU = Math.PI * 2
+const AUTO_ROTATION_DEGREES_PER_SECOND = 4
 
 interface ProjectedPoint {
   x: number
@@ -57,6 +58,9 @@ export const depthHelix: Procedure = {
     let traceSpeed = 0.75
     let traceDirection = 1
     let tracePaused = false
+    let autoRotateX = false
+    let autoRotateY = false
+    let autoRotateZ = false
     const rotationXInput = slider('-180', '180', '1', String(rotationX), 'X-axis rotation')
     const rotationYInput = slider('-180', '180', '1', String(rotationY), 'Y-axis rotation')
     const rotationZInput = slider('-180', '180', '1', String(rotationZ), 'Z-axis rotation')
@@ -82,14 +86,17 @@ export const depthHelix: Procedure = {
     const resetButton = el('button', { class: 'cinema-action helix-reset', type: 'button' }, 'Reset view')
     const tracePauseButton = el('button', { class: 'cinema-action', type: 'button' }, 'Pause trace')
     const traceReverseButton = el('button', { class: 'cinema-action', type: 'button' }, 'Reverse trace')
+    const rotationXButton = axisRotationButton('X')
+    const rotationYButton = axisRotationButton('Y')
+    const rotationZButton = axisRotationButton('Z')
     tracePauseButton.setAttribute('aria-pressed', 'false')
     traceReverseButton.setAttribute('aria-pressed', 'false')
     const controls = el(
       'div',
       { class: 'cinema-controls helix-controls' },
-      el('label', { class: 'cinema-control' }, controlName('drag ↕', 'rotate X'), rotationXInput, rotationXValue),
-      el('label', { class: 'cinema-control' }, controlName('drag ↔', 'rotate Y'), rotationYInput, rotationYValue),
-      el('label', { class: 'cinema-control' }, controlName('slider', 'rotate Z'), rotationZInput, rotationZValue),
+      el('div', { class: 'cinema-control' }, rotationXButton, rotationXInput, rotationXValue),
+      el('div', { class: 'cinema-control' }, rotationYButton, rotationYInput, rotationYValue),
+      el('div', { class: 'cinema-control' }, rotationZButton, rotationZInput, rotationZValue),
       el('label', { class: 'cinema-control' }, controlName('wheel', 'zoom'), zoomInput, zoomValue),
       el('label', { class: 'cinema-control' }, controlName('slider', 'stretch'), stretchInput, stretchValue),
       el('label', { class: 'cinema-control' }, controlName('−  +', 'depth'), depthInput, depthValue),
@@ -125,9 +132,13 @@ export const depthHelix: Procedure = {
         traceProgress,
       )
       depthHud.textContent = `${depth.toFixed(1)}Δ ${direction === 'convergence' ? 'converging' : 'diverging'}`
-      stateHud.textContent = tracePaused
+      const traceState = tracePaused
         ? 'guided trace · paused'
         : `guided trace · ${traceDirection > 0 ? 'forward' : 'reverse'} · ${traceSpeed.toFixed(2)}×`
+      const rotatingAxes = [autoRotateX && 'X', autoRotateY && 'Y', autoRotateZ && 'Z'].filter(Boolean)
+      stateHud.textContent = rotatingAxes.length > 0
+        ? `${traceState} · rotating ${rotatingAxes.join('+')}`
+        : traceState
       clockHud.textContent = elapsed.format()
     }
     const resize = (): void => {
@@ -186,7 +197,16 @@ export const depthHelix: Procedure = {
     const setRotation = (input: HTMLInputElement, value: number): void => {
       input.value = String(wrapDegrees(value))
     }
+    const updateAxisButtons = (): void => {
+      updateAxisRotationButton(rotationXButton, 'X', autoRotateX)
+      updateAxisRotationButton(rotationYButton, 'Y', autoRotateY)
+      updateAxisRotationButton(rotationZButton, 'Z', autoRotateZ)
+    }
     const resetView = (): void => {
+      autoRotateX = false
+      autoRotateY = false
+      autoRotateZ = false
+      updateAxisButtons()
       rotationXInput.value = '24'
       rotationYInput.value = '-28'
       rotationZInput.value = '-18'
@@ -202,6 +222,21 @@ export const depthHelix: Procedure = {
     }
     rungsButton.addEventListener('click', toggleRungs)
     resetButton.addEventListener('click', resetView)
+    rotationXButton.addEventListener('click', () => {
+      autoRotateX = !autoRotateX
+      updateAxisButtons()
+      render()
+    })
+    rotationYButton.addEventListener('click', () => {
+      autoRotateY = !autoRotateY
+      updateAxisButtons()
+      render()
+    })
+    rotationZButton.addEventListener('click', () => {
+      autoRotateZ = !autoRotateZ
+      updateAxisButtons()
+      render()
+    })
     const updateTraceButtons = (): void => {
       tracePauseButton.setAttribute('aria-pressed', String(tracePaused))
       tracePauseButton.textContent = tracePaused ? 'Resume trace' : 'Pause trace'
@@ -280,7 +315,12 @@ export const depthHelix: Procedure = {
           updateTraceButtons()
         }
       }
-      render()
+      const rotationStep = (deltaMs / 1000) * AUTO_ROTATION_DEGREES_PER_SECOND
+      if (autoRotateX) setRotation(rotationXInput, rotationX + rotationStep)
+      if (autoRotateY) setRotation(rotationYInput, rotationY + rotationStep)
+      if (autoRotateZ) setRotation(rotationZInput, rotationZ + rotationStep)
+      if (autoRotateX || autoRotateY || autoRotateZ) update()
+      else render()
       clockRaf = requestAnimationFrame(tick)
     }
     clockRaf = requestAnimationFrame(tick)
@@ -317,6 +357,24 @@ function controlName(shortcut: string, label: string): HTMLElement {
     el('kbd', { class: 'cinema-shortcut' }, shortcut),
     el('span', {}, label),
   )
+}
+
+function axisRotationButton(axis: 'X' | 'Y' | 'Z'): HTMLButtonElement {
+  const button = el('button', { class: 'cinema-action helix-axis-motion', type: 'button' })
+  updateAxisRotationButton(button, axis, false)
+  return button
+}
+
+function updateAxisRotationButton(
+  button: HTMLButtonElement,
+  axis: 'X' | 'Y' | 'Z',
+  active: boolean,
+): void {
+  const action = active ? 'Pause' : 'Start'
+  button.textContent = `${active ? 'Ⅱ' : '▶'} ${axis}`
+  button.setAttribute('aria-pressed', String(active))
+  button.setAttribute('aria-label', `${action} automatic ${axis}-axis rotation`)
+  button.title = `${action} automatic ${axis}-axis rotation`
 }
 
 export function drawHelix(
@@ -510,7 +568,7 @@ function projectPoint(
 }
 
 function wrapDegrees(value: number): number {
-  return Math.round((((value + 180) % 360) + 360) % 360 - 180)
+  return (((value + 180) % 360) + 360) % 360 - 180
 }
 
 function pointerDistance(pointers: Map<number, { x: number; y: number }>): number {
