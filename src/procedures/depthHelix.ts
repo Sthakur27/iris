@@ -65,9 +65,11 @@ export const depthHelix: Procedure = {
     let autoRotateYDirection = 1
     let autoRotateZDirection = 1
     let axisRotationSpeed = 1
-    const rotationXInput = slider('-180', '180', '1', String(rotationX), 'X-axis rotation')
-    const rotationYInput = slider('-180', '180', '1', String(rotationY), 'Y-axis rotation')
-    const rotationZInput = slider('-180', '180', '1', String(rotationZ), 'Z-axis rotation')
+    // Fine internal steps let slow auto-rotation accumulate every frame. The
+    // visible readouts remain rounded to whole degrees for legibility.
+    const rotationXInput = slider('-180', '180', '0.001', String(rotationX), 'X-axis rotation')
+    const rotationYInput = slider('-180', '180', '0.001', String(rotationY), 'Y-axis rotation')
+    const rotationZInput = slider('-180', '180', '0.001', String(rotationZ), 'Z-axis rotation')
     const zoomInput = slider('50', '180', '1', String(zoom), 'Helix zoom')
     const stretchInput = slider('50', '200', '1', String(stretch), 'Helix stretch')
     const depthInput = slider('0', '40', '0.5', String(depth), 'Fixed depth')
