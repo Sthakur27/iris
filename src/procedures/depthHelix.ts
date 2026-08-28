@@ -46,20 +46,20 @@ export const depthHelix: Procedure = {
       'Follow the moving glow along one rail and keep only that marked segment single and clear. Other depths may double.',
     )
 
-    let rotationX = 24
-    let rotationY = -28
-    let rotationZ = -18
+    let rotationX = 90
+    let rotationY = 0
+    let rotationZ = -45
     let zoom = 100
-    let stretch = 100
+    let stretch = 125
     let depth = 4
     let showRungs = true
-    let direction: 'convergence' | 'divergence' = 'convergence'
+    let direction: 'convergence' | 'divergence' = 'divergence'
     let traceProgress = 0
     let traceSpeed = 0.75
     let traceDirection = 1
     let tracePaused = false
     let autoRotateX = false
-    let autoRotateY = false
+    let autoRotateY = true
     let autoRotateZ = false
     let autoRotateXDirection = 1
     let autoRotateYDirection = 1
@@ -72,7 +72,7 @@ export const depthHelix: Procedure = {
     const rotationZInput = slider('-180', '180', '0.001', String(rotationZ), 'Z-axis rotation')
     const zoomInput = slider('50', '180', '1', String(zoom), 'Helix zoom')
     const stretchInput = slider('50', '200', '1', String(stretch), 'Helix stretch')
-    const depthInput = slider('0', '40', '0.5', String(depth), 'Fixed depth')
+    const depthInput = slider('0', '20', '0.5', String(depth), 'Fixed depth')
     const traceSpeedInput = slider('0.25', '2', '0.05', String(traceSpeed), 'Trace speed')
     const axisRotationSpeedInput = slider('0.25', '2', '0.25', String(axisRotationSpeed), 'Axis rotation speed')
     const directionInput = el('select')
@@ -81,6 +81,7 @@ export const depthHelix: Procedure = {
       el('option', { value: 'convergence' }, 'Convergence'),
       el('option', { value: 'divergence' }, 'Divergence'),
     )
+    directionInput.value = direction
     const rotationXValue = el('span', { class: 'cinema-control-value' }, `${rotationX}°`)
     const rotationYValue = el('span', { class: 'cinema-control-value' }, `${rotationY}°`)
     const rotationZValue = el('span', { class: 'cinema-control-value' }, `${rotationZ}°`)
@@ -100,7 +101,7 @@ export const depthHelix: Procedure = {
       'Show controls ↑',
     )
     const rotationXButton = axisRotationButton('X')
-    const rotationYButton = axisRotationButton('Y')
+    const rotationYButton = axisRotationButton('Y', true)
     const rotationZButton = axisRotationButton('Z')
     tracePauseButton.setAttribute('aria-pressed', 'false')
     traceReverseButton.setAttribute('aria-pressed', 'false')
@@ -230,11 +231,11 @@ export const depthHelix: Procedure = {
       autoRotateYDirection = 1
       autoRotateZDirection = 1
       updateAxisButtons()
-      rotationXInput.value = '24'
-      rotationYInput.value = '-28'
-      rotationZInput.value = '-18'
+      rotationXInput.value = '90'
+      rotationYInput.value = '0'
+      rotationZInput.value = '-45'
       zoomInput.value = '100'
-      stretchInput.value = '100'
+      stretchInput.value = '125'
       update()
     }
     const toggleRungs = (): void => {
@@ -427,9 +428,9 @@ function controlName(shortcut: string, label: string): HTMLElement {
   )
 }
 
-function axisRotationButton(axis: 'X' | 'Y' | 'Z'): HTMLButtonElement {
+function axisRotationButton(axis: 'X' | 'Y' | 'Z', active = false): HTMLButtonElement {
   const button = el('button', { class: 'cinema-action helix-axis-motion', type: 'button' })
-  updateAxisRotationButton(button, axis, false)
+  updateAxisRotationButton(button, axis, active)
   return button
 }
 
