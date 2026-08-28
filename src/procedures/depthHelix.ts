@@ -8,7 +8,7 @@ import { el } from '../ui/router'
 const RED = '#ff2b2b'
 const BLUE = '#2b6bff'
 const TAU = Math.PI * 2
-const AUTO_ROTATION_DEGREES_PER_SECOND = 8
+const AUTO_ROTATION_DEGREES_PER_SECOND = 12
 
 interface ProjectedPoint {
   x: number
@@ -62,6 +62,9 @@ export const depthHelix: Procedure = {
     let autoRotateX = false
     let autoRotateY = false
     let autoRotateZ = false
+    let autoRotateXDirection = 1
+    let autoRotateYDirection = 1
+    let autoRotateZDirection = 1
     const rotationXInput = slider('-180', '180', '1', String(rotationX), 'X-axis rotation')
     const rotationYInput = slider('-180', '180', '1', String(rotationY), 'Y-axis rotation')
     const rotationZInput = slider('-180', '180', '1', String(rotationZ), 'Z-axis rotation')
@@ -207,6 +210,9 @@ export const depthHelix: Procedure = {
       autoRotateX = false
       autoRotateY = false
       autoRotateZ = false
+      autoRotateXDirection = 1
+      autoRotateYDirection = 1
+      autoRotateZDirection = 1
       updateAxisButtons()
       rotationXInput.value = '24'
       rotationYInput.value = '-28'
@@ -321,9 +327,30 @@ export const depthHelix: Procedure = {
         }
       }
       const rotationStep = (deltaMs / 1000) * AUTO_ROTATION_DEGREES_PER_SECOND
-      if (autoRotateX) setRotation(rotationXInput, rotationX + rotationStep)
-      if (autoRotateY) setRotation(rotationYInput, rotationY + rotationStep)
-      if (autoRotateZ) setRotation(rotationZInput, rotationZ + rotationStep)
+      if (autoRotateX) {
+        autoRotateXDirection = advanceAxisRotation(
+          rotationXInput,
+          rotationX,
+          autoRotateXDirection,
+          rotationStep,
+        )
+      }
+      if (autoRotateY) {
+        autoRotateYDirection = advanceAxisRotation(
+          rotationYInput,
+          rotationY,
+          autoRotateYDirection,
+          rotationStep,
+        )
+      }
+      if (autoRotateZ) {
+        autoRotateZDirection = advanceAxisRotation(
+          rotationZInput,
+          rotationZ,
+          autoRotateZDirection,
+          rotationStep,
+        )
+      }
       if (autoRotateX || autoRotateY || autoRotateZ) update()
       else render()
       clockRaf = requestAnimationFrame(tick)
@@ -380,6 +407,31 @@ function updateAxisRotationButton(
   button.setAttribute('aria-pressed', String(active))
   button.setAttribute('aria-label', `${action} automatic ${axis}-axis rotation`)
   button.title = `${action} automatic ${axis}-axis rotation`
+}
+
+/**
+ * Move one rotation slider toward an endpoint, then reflect and travel back.
+ * Returning the direction separately keeps X/Y/Z sweeps fully independent.
+ */
+function advanceAxisRotation(
+  input: HTMLInputElement,
+  current: number,
+  direction: number,
+  step: number,
+): number {
+  const min = Number(input.min)
+  const max = Number(input.max)
+  let next = current + direction * step
+  let nextDirection = direction
+  if (next >= max) {
+    next = max - (next - max)
+    nextDirection = -1
+  } else if (next <= min) {
+    next = min + (min - next)
+    nextDirection = 1
+  }
+  input.value = String(Math.min(max, Math.max(min, next)))
+  return nextDirection
 }
 
 export function drawHelix(
