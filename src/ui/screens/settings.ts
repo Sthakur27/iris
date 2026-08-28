@@ -12,6 +12,11 @@ import { el } from '../router'
 import type { Screen } from '../router'
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from '../../core/settings'
 import type { FlipperLevel, Settings } from '../../core/types'
+import {
+  DEPTH_CINEMA_MAX_CONVERGENCE_PD,
+  DEPTH_CINEMA_MIN_PEAK_PD,
+  depthCinemaDivergenceLimit,
+} from '../../core/depthCinemaSafety'
 import '../screens.css'
 
 export const settingsScreen: Screen = (root, nav) => {
@@ -114,25 +119,32 @@ export const settingsScreen: Screen = (root, nav) => {
       type: 'checkbox',
       checked: settings.depthCinema.reversePlayback,
     })
+    const cinemaDivergenceLimit = depthCinemaDivergenceLimit(
+      settings.calibration.viewingDistanceCm,
+    )
     const cinemaConvergence = numberField(
       'Convergence peak (Δ)',
       settings.depthCinema.convergencePeakPd,
-      { min: 0.5, max: 40, step: 0.5 },
+      {
+        min: DEPTH_CINEMA_MIN_PEAK_PD,
+        max: DEPTH_CINEMA_MAX_CONVERGENCE_PD,
+        step: 0.5,
+      },
     )
     const cinemaDivergence = numberField(
       'Divergence peak (Δ)',
       settings.depthCinema.divergencePeakPd,
-      { min: 0.5, max: 20, step: 0.5 },
+      { min: DEPTH_CINEMA_MIN_PEAK_PD, max: cinemaDivergenceLimit, step: 0.5 },
     )
     const cinemaRamp = numberField(
       'Time to reach peak (seconds)',
       settings.depthCinema.rampSeconds,
-      { min: 5, max: 120, step: 1 },
+      { min: 10, max: 120, step: 1 },
     )
     const cinemaArrows = numberField(
-      'Moving arrows (1–3)',
+      'Moving arrows (0–4)',
       settings.depthCinema.movingArrowCount,
-      { min: 1, max: 3, step: 1 },
+      { min: 0, max: 4, step: 1 },
     )
     cinema.append(
       el('h2', {}, 'Depth Cinema — experimental'),
@@ -154,8 +166,9 @@ export const settingsScreen: Screen = (root, nav) => {
       el(
         'p',
         { class: 'gloss' },
-        'Only the peak for the selected direction is used. The app will lower it at runtime if the calibrated ' +
-          'screen cannot display that disparity safely. Stop or pause if the scene doubles, strains, or feels uncomfortable.',
+        `For unsupervised use, Cinema is capped at ${DEPTH_CINEMA_MAX_CONVERGENCE_PD}Δ convergence and ` +
+          `${cinemaDivergenceLimit}Δ divergence at your ${settings.calibration.viewingDistanceCm} cm viewing distance. ` +
+          'The divergence cap stays short of optical infinity. Stop immediately for doubling, eye pain, headache, nausea, or dizziness. If double vision remains after stopping, get an eye exam before continuing.',
       ),
     )
     children.push(cinema)
@@ -369,19 +382,19 @@ export const settingsScreen: Screen = (root, nav) => {
         return
       }
       if (
-        cinemaConvergenceValue < 0.5 ||
-        cinemaConvergenceValue > 40 ||
-        cinemaDivergenceValue < 0.5 ||
-        cinemaDivergenceValue > 20 ||
-        cinemaRampValue < 5 ||
+        cinemaConvergenceValue < DEPTH_CINEMA_MIN_PEAK_PD ||
+        cinemaConvergenceValue > DEPTH_CINEMA_MAX_CONVERGENCE_PD ||
+        cinemaDivergenceValue < DEPTH_CINEMA_MIN_PEAK_PD ||
+        cinemaDivergenceValue > cinemaDivergenceLimit ||
+        cinemaRampValue < 10 ||
         cinemaRampValue > 120 ||
         !Number.isInteger(cinemaArrowsValue) ||
-        cinemaArrowsValue < 1 ||
-        cinemaArrowsValue > 3
+        cinemaArrowsValue < 0 ||
+        cinemaArrowsValue > 4
       ) {
         message = {
           kind: 'bad',
-          text: 'Depth Cinema needs a 0.5–40Δ convergence peak, a 0.5–20Δ divergence peak, a 5–120 second ramp, and 1–3 moving arrows.',
+          text: `Depth Cinema needs a ${DEPTH_CINEMA_MIN_PEAK_PD}–${DEPTH_CINEMA_MAX_CONVERGENCE_PD}Δ convergence peak, a ${DEPTH_CINEMA_MIN_PEAK_PD}–${cinemaDivergenceLimit}Δ divergence peak at this viewing distance, a 10–120 second ramp, and 0–4 moving arrows.`,
         }
         render()
         return

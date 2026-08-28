@@ -42,7 +42,7 @@ export const depthHelix: Procedure = {
     const prompt = el(
       'div',
       { class: 'stage-prompt cinema-prompt helix-prompt' },
-      'Keep both rails and the centre rungs single. The helix stays still until you move a control.',
+      'Follow the moving glow along one rail and keep only that marked segment single and clear. Other depths may double.',
     )
 
     let rotationX = 24
@@ -53,12 +53,17 @@ export const depthHelix: Procedure = {
     let depth = 4
     let showRungs = true
     let direction: 'convergence' | 'divergence' = 'convergence'
+    let traceProgress = 0
+    let traceSpeed = 0.75
+    let traceDirection = 1
+    let tracePaused = false
     const rotationXInput = slider('-180', '180', '1', String(rotationX), 'X-axis rotation')
     const rotationYInput = slider('-180', '180', '1', String(rotationY), 'Y-axis rotation')
     const rotationZInput = slider('-180', '180', '1', String(rotationZ), 'Z-axis rotation')
     const zoomInput = slider('50', '180', '1', String(zoom), 'Helix zoom')
     const stretchInput = slider('50', '200', '1', String(stretch), 'Helix stretch')
     const depthInput = slider('0', '40', '0.5', String(depth), 'Fixed depth')
+    const traceSpeedInput = slider('0.25', '2', '0.05', String(traceSpeed), 'Trace speed')
     const directionInput = el('select')
     directionInput.setAttribute('aria-label', 'Depth direction')
     directionInput.append(
@@ -71,9 +76,14 @@ export const depthHelix: Procedure = {
     const zoomValue = el('span', { class: 'cinema-control-value' }, `${zoom}%`)
     const stretchValue = el('span', { class: 'cinema-control-value' }, `${stretch}%`)
     const depthValue = el('span', { class: 'cinema-control-value' }, `${depth.toFixed(1)}Δ`)
+    const traceSpeedValue = el('span', { class: 'cinema-control-value' }, `${traceSpeed.toFixed(2)}×`)
     const rungsButton = el('button', { class: 'cinema-action helix-toggle', type: 'button' }, 'Cross-lines on')
     rungsButton.setAttribute('aria-pressed', 'true')
     const resetButton = el('button', { class: 'cinema-action helix-reset', type: 'button' }, 'Reset view')
+    const tracePauseButton = el('button', { class: 'cinema-action', type: 'button' }, 'Pause trace')
+    const traceReverseButton = el('button', { class: 'cinema-action', type: 'button' }, 'Reverse trace')
+    tracePauseButton.setAttribute('aria-pressed', 'false')
+    traceReverseButton.setAttribute('aria-pressed', 'false')
     const controls = el(
       'div',
       { class: 'cinema-controls helix-controls' },
@@ -83,7 +93,10 @@ export const depthHelix: Procedure = {
       el('label', { class: 'cinema-control' }, controlName('wheel', 'zoom'), zoomInput, zoomValue),
       el('label', { class: 'cinema-control' }, controlName('slider', 'stretch'), stretchInput, stretchValue),
       el('label', { class: 'cinema-control' }, controlName('−  +', 'depth'), depthInput, depthValue),
+      el('label', { class: 'cinema-control' }, controlName('slider', 'trace speed'), traceSpeedInput, traceSpeedValue),
       el('label', { class: 'helix-direction' }, el('span', { class: 'cinema-control-name' }, 'direction'), directionInput),
+      tracePauseButton,
+      traceReverseButton,
       rungsButton,
       resetButton,
     )
@@ -109,8 +122,12 @@ export const depthHelix: Procedure = {
         zoom / 100,
         stretch / 100,
         showRungs,
+        traceProgress,
       )
       depthHud.textContent = `${depth.toFixed(1)}Δ ${direction === 'convergence' ? 'converging' : 'diverging'}`
+      stateHud.textContent = tracePaused
+        ? 'guided trace · paused'
+        : `guided trace · ${traceDirection > 0 ? 'forward' : 'reverse'} · ${traceSpeed.toFixed(2)}×`
       clockHud.textContent = elapsed.format()
     }
     const resize = (): void => {
@@ -129,6 +146,7 @@ export const depthHelix: Procedure = {
       rotationZ = Number(rotationZInput.value)
       zoom = Number(zoomInput.value)
       stretch = Number(stretchInput.value)
+      traceSpeed = Number(traceSpeedInput.value)
       direction = directionInput.value === 'divergence' ? 'divergence' : 'convergence'
       const maximumDepth = direction === 'convergence' ? 40 : 20
       depthInput.max = String(maximumDepth)
@@ -139,10 +157,11 @@ export const depthHelix: Procedure = {
       rotationZValue.textContent = `${Math.round(rotationZ)}°`
       zoomValue.textContent = `${Math.round(zoom)}%`
       stretchValue.textContent = `${Math.round(stretch)}%`
+      traceSpeedValue.textContent = `${traceSpeed.toFixed(2)}×`
       depthValue.textContent = `${depth.toFixed(1)}Δ`
       prompt.textContent = showRungs
-        ? 'Keep both rails and the centre cross-lines single. The helix stays still until you move a control.'
-        : 'Keep both helix rails single. Cross-lines are hidden; the helix stays still until you move a control.'
+        ? 'Follow the moving glow along one rail and keep only that marked segment single and clear. Other depths may double.'
+        : 'Follow the moving glow and keep only that marked segment single and clear. Other depths may double.'
       render()
     }
     const nudge = (input: HTMLInputElement, amount: number): void => {
@@ -160,7 +179,7 @@ export const depthHelix: Procedure = {
       else if (event.code === 'Minus' || event.code === 'NumpadSubtract') { event.preventDefault(); nudge(depthInput, -0.5) }
       else if (event.code === 'Equal' || event.code === 'NumpadAdd') { event.preventDefault(); nudge(depthInput, 0.5) }
     }
-    for (const input of [rotationXInput, rotationYInput, rotationZInput, zoomInput, stretchInput, depthInput]) {
+    for (const input of [rotationXInput, rotationYInput, rotationZInput, zoomInput, stretchInput, depthInput, traceSpeedInput]) {
       input.addEventListener('input', update)
     }
     directionInput.addEventListener('change', update)
@@ -183,6 +202,22 @@ export const depthHelix: Procedure = {
     }
     rungsButton.addEventListener('click', toggleRungs)
     resetButton.addEventListener('click', resetView)
+    const updateTraceButtons = (): void => {
+      tracePauseButton.setAttribute('aria-pressed', String(tracePaused))
+      tracePauseButton.textContent = tracePaused ? 'Resume trace' : 'Pause trace'
+      traceReverseButton.setAttribute('aria-pressed', String(traceDirection < 0))
+      traceReverseButton.textContent = traceDirection < 0 ? 'Trace forward' : 'Trace reverse'
+    }
+    tracePauseButton.addEventListener('click', () => {
+      tracePaused = !tracePaused
+      updateTraceButtons()
+      render()
+    })
+    traceReverseButton.addEventListener('click', () => {
+      traceDirection *= -1
+      updateTraceButtons()
+      render()
+    })
 
     const pointers = new Map<number, { x: number; y: number }>()
     let previousPinchDistance = 0
@@ -226,7 +261,28 @@ export const depthHelix: Procedure = {
     resize()
 
     let clockRaf = 0
-    const tick = (): void => { clockHud.textContent = elapsed.format(); clockRaf = requestAnimationFrame(tick) }
+    let previousTraceMs = elapsed.ms()
+    const tick = (): void => {
+      const now = elapsed.ms()
+      const deltaMs = Math.max(0, now - previousTraceMs)
+      previousTraceMs = now
+      if (!tracePaused) {
+        // At 1×, one end-to-end pass takes 30 seconds. Bounce at each endpoint
+        // instead of jumping across the helix and forcing an abrupt vergence step.
+        traceProgress += traceDirection * (deltaMs / 30_000) * traceSpeed
+        if (traceProgress >= 1) {
+          traceProgress = 1
+          traceDirection = -1
+          updateTraceButtons()
+        } else if (traceProgress <= 0) {
+          traceProgress = 0
+          traceDirection = 1
+          updateTraceButtons()
+        }
+      }
+      render()
+      clockRaf = requestAnimationFrame(tick)
+    }
     clockRaf = requestAnimationFrame(tick)
     try {
       await new Promise<void>((resolve) => {
@@ -276,6 +332,7 @@ export function drawHelix(
   zoom: number,
   stretch: number,
   showRungs: boolean,
+  traceProgress: number | null = null,
 ): void {
   const g = canvas.getContext('2d')
   if (!g) return
@@ -346,6 +403,16 @@ export function drawHelix(
       g.stroke()
     }
 
+    if (traceProgress !== null) {
+      drawTraceHighlight(
+        g,
+        strands[0] ?? [],
+        eyeSign * disparity,
+        radius,
+        Math.min(1, Math.max(0, traceProgress)),
+      )
+    }
+
     const nodes: ProjectedPoint[] = []
     for (let node = 0; node <= 16; node++) {
       const u = 0.035 + (node / 16) * 0.93
@@ -362,6 +429,53 @@ export function drawHelix(
     }
     g.restore()
   }
+}
+
+/**
+ * A binocular comet that lives on one rail. Each eye gets the marker at the
+ * rail's own disparity, so following it trains the intended depth path rather
+ * than a screen-plane overlay.
+ */
+function drawTraceHighlight(
+  g: CanvasRenderingContext2D,
+  strand: ProjectedPoint[],
+  signedDisparity: number,
+  radius: number,
+  progress: number,
+): void {
+  if (strand.length < 2) return
+  const trailLength = 0.09
+  for (let i = 1; i < strand.length; i++) {
+    const a = strand[i - 1]
+    const b = strand[i]
+    if (!a || !b) continue
+    const segmentProgress = (i - 0.5) / (strand.length - 1)
+    const distance = Math.abs(segmentProgress - progress)
+    if (distance > trailLength) continue
+    const glow = Math.pow(1 - distance / trailLength, 1.7)
+    g.globalAlpha = 0.18 + glow * 0.78
+    g.lineWidth = Math.max(3.5, radius * (0.09 + glow * 0.075))
+    g.beginPath()
+    g.moveTo(a.x + signedDisparity * a.depth * 0.5, a.y)
+    g.lineTo(b.x + signedDisparity * b.depth * 0.5, b.y)
+    g.stroke()
+  }
+
+  const scaledIndex = progress * (strand.length - 1)
+  const index = Math.min(strand.length - 2, Math.floor(scaledIndex))
+  const amount = scaledIndex - index
+  const a = strand[index]
+  const b = strand[index + 1]
+  if (!a || !b) return
+  const x = a.x + (b.x - a.x) * amount
+  const y = a.y + (b.y - a.y) * amount
+  const depth = a.depth + (b.depth - a.depth) * amount
+  const markerX = x + signedDisparity * depth * 0.5
+  const markerRadius = Math.max(4, radius * 0.085)
+  g.globalAlpha = 0.28
+  g.beginPath(); g.arc(markerX, y, markerRadius * 2.1, 0, TAU); g.fill()
+  g.globalAlpha = 1
+  g.beginPath(); g.arc(markerX, y, markerRadius, 0, TAU); g.fill()
 }
 
 function projectPoint(

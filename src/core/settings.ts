@@ -1,4 +1,5 @@
 import type { LengthUnit, ProcedureId, SessionRecord, Settings } from './types'
+import { clampDepthCinemaSettings } from './depthCinemaSafety'
 
 /**
  * HTS's published defaults, used as starting values only.
@@ -125,13 +126,18 @@ export function loadSettings(): Settings {
   if (!raw) return structuredClone(DEFAULT_SETTINGS)
   try {
     const parsed = JSON.parse(raw) as Partial<Settings>
-    return {
+    const merged = {
       ...structuredClone(DEFAULT_SETTINGS),
       ...parsed,
       calibration: { ...DEFAULT_SETTINGS.calibration, ...parsed.calibration },
       prescription: { ...DEFAULT_SETTINGS.prescription, ...parsed.prescription },
       depthCinema: { ...DEFAULT_SETTINGS.depthCinema, ...parsed.depthCinema },
     }
+    merged.depthCinema = clampDepthCinemaSettings(
+      merged.depthCinema,
+      merged.calibration.viewingDistanceCm,
+    )
+    return merged
   } catch {
     return structuredClone(DEFAULT_SETTINGS)
   }

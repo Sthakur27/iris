@@ -2,6 +2,11 @@ import type { Calibration, EyeSide } from '../core/types'
 import type { Procedure, ProcedureContext } from './base'
 import { createElapsedClock } from './base'
 import { prismDioptresToPx } from '../core/geometry'
+import {
+  clampDepthCinemaSettings,
+  DEPTH_CINEMA_MAX_CONVERGENCE_PD,
+  depthCinemaDivergenceLimit,
+} from '../core/depthCinemaSafety'
 import { el } from '../ui/router'
 
 /**
@@ -37,6 +42,14 @@ interface MovingArrow {
   speed: number
 }
 
+interface SceneAttractor {
+  /** Normalized canvas coordinates so the attractor survives resizes/fullscreen. */
+  x: number
+  y: number
+  /** Eased pull strength; kept below 1 so the arrows retain their own motion. */
+  strength: number
+}
+
 const STARS: Star[] = Array.from({ length: 46 }, (_, i) => ({
   x: ((i * 73 + 31) % 997) / 997,
   y: ((i * 137 + 59) % 991) / 991,
@@ -61,12 +74,18 @@ export const depthCinema: Procedure = {
 
 async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
   const { settings, signal } = ctx
-  const config = settings.depthCinema
+  const config = clampDepthCinemaSettings(
+    settings.depthCinema,
+    settings.calibration.viewingDistanceCm,
+  )
   const cal = settings.calibration
   const sign = config.direction === 'convergence' ? 1 : -1
   const requestedPeak =
     config.direction === 'convergence' ? config.convergencePeakPd : config.divergencePeakPd
-  const maximumPeak = config.direction === 'convergence' ? 40 : 20
+  const maximumPeak =
+    config.direction === 'convergence'
+      ? DEPTH_CINEMA_MAX_CONVERGENCE_PD
+      : depthCinemaDivergenceLimit(cal.viewingDistanceCm)
   const targetPeakPd = Math.min(maximumPeak, Math.max(0.5, requestedPeak))
 
   const stage = el('div', { class: 'stage cinema-stage' })
@@ -84,7 +103,7 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
   const prompt = el(
     'div',
     { class: 'stage-prompt cinema-prompt' },
-    'Keep the little ship single as the scene deepens. Pause if it doubles or feels uncomfortable.',
+    'Keep the arrows single and clear; click to gently gather them. Stop immediately for doubling, pain, headache, nausea, or dizziness. Look far away; if double vision remains, get an eye exam before continuing.',
   )
 
   const speedInput = el('input', {
@@ -107,8 +126,8 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
   const depthValue = el('span', { class: 'cinema-control-value' }, '0.0Δ')
   const arrowsInput = el('input', {
     type: 'range',
-    min: '1',
-    max: '3',
+    min: '0',
+    max: '4',
     step: '1',
     value: String(config.movingArrowCount),
   })
@@ -187,11 +206,31 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
   let raf = 0
   let speed = 0.5
   let currentDemandPd = 0
-  let arrowCount = config.movingArrowCount
+  let arrowCount = Math.min(4, Math.max(0, Math.round(config.movingArrowCount)))
+  arrowsInput.value = String(arrowCount)
+  arrowsValue.textContent = String(arrowCount)
   let depthRangeInches = 2.5
   let motionPaused = false
   let depthPaused = false
   let depthDirection = 1
+  let attractorTarget: Pick<SceneAttractor, 'x' | 'y'> | null = null
+  let attractorPosition: Pick<SceneAttractor, 'x' | 'y'> | null = null
+  let attractorStrength = 0
+
+  canvas.style.cursor = 'crosshair'
+  canvas.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return
+    const rect = canvas.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return
+    const nextTarget = {
+      x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+      y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+    }
+    attractorTarget = nextTarget
+    // The first click begins with zero pull; later clicks retain the current
+    // attractor position so the flock glides across instead of springing free.
+    attractorPosition ??= nextTarget
+  })
 
   const setSpeed = (value: number): void => {
     const min = Number(speedInput.min)
@@ -201,7 +240,7 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
     speedValue.textContent = `${speed.toFixed(2)}×`
   }
   const setArrowCount = (value: number): void => {
-    arrowCount = Math.min(3, Math.max(1, Math.round(value)))
+    arrowCount = Math.min(4, Math.max(0, Math.round(value)))
     arrowsInput.value = String(arrowCount)
     arrowsValue.textContent = String(arrowCount)
   }
@@ -319,7 +358,8 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
 
   const draw = (): void => {
     const elapsedMs = elapsed.ms()
-    const deltaMs = Math.max(0, elapsedMs - lastElapsedMs) * speed
+    const frameDeltaMs = Math.max(0, elapsedMs - lastElapsedMs)
+    const deltaMs = frameDeltaMs * speed
     if (!motionPaused) movieMs += deltaMs
     if (!depthPaused) depthMs += deltaMs * depthDirection
     lastElapsedMs = elapsedMs
@@ -332,6 +372,15 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
     depthInput.value = String(demand)
     depthValue.textContent = `${demand.toFixed(1)}Δ`
     const signedDemand = sign * demand
+    if (attractorTarget && attractorPosition) {
+      const ease = 1 - Math.exp(-frameDeltaMs / 420)
+      attractorPosition.x += (attractorTarget.x - attractorPosition.x) * ease
+      attractorPosition.y += (attractorTarget.y - attractorPosition.y) * ease
+      attractorStrength += (0.78 - attractorStrength) * ease
+    }
+    const attractor = attractorPosition
+      ? { ...attractorPosition, strength: attractorStrength }
+      : null
 
     renderMovieFrame(canvas, {
       width,
@@ -345,6 +394,7 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
       redEye: cal.redEye,
       arrowCount,
       depthRangeInches,
+      attractor,
     })
 
     const sense = config.direction === 'convergence' ? 'converging' : 'diverging'
@@ -469,11 +519,13 @@ function renderMovieFrame(
     redEye: EyeSide
     arrowCount: number
     depthRangeInches: number
+    attractor: SceneAttractor | null
   },
 ): void {
   const g = canvas.getContext('2d')
   if (!g) return
   const { width: w, height: h, dpr, seconds: t } = opts
+  const visibleArrowCount = Math.min(4, Math.max(0, Math.round(opts.arrowCount)))
   const disparityPx = prismDioptresToPx(opts.signedDemandPd, opts.calibration)
   const layerDisparityPx = createLayerDisparity(
     opts.signedDemandPd,
@@ -500,13 +552,16 @@ function renderMovieFrame(
     drawMoon(g, w, h, t, colour, eyeSign * layerDisparityPx(0.68) * 0.5)
     drawMovingArrows(
       g,
-      MOVING_ARROWS.slice(0, Math.max(1, Math.min(3, opts.arrowCount))),
+      // The ship is itself an arrow-shaped moving object, so the secondary
+      // arrows fill only the remainder of the requested visible total.
+      MOVING_ARROWS.slice(0, Math.max(0, visibleArrowCount - 1)),
       w,
       h,
       t,
       colour,
       eyeSign,
       layerDisparityPx,
+      opts.attractor,
     )
 
     // Three gates drift toward the viewer. Their increasing depth factors make the
@@ -529,7 +584,9 @@ function renderMovieFrame(
       )
     }
 
-    drawShip(g, w, h, t, colour, eyeSign * disparityPx * 0.5)
+    if (visibleArrowCount > 0) {
+      drawShip(g, w, h, t, colour, eyeSign * disparityPx * 0.5, opts.attractor)
+    }
   }
   g.restore()
 
@@ -600,6 +657,7 @@ function drawMovingArrows(
   colour: string,
   eyeSign: number,
   layerDisparityPx: (sceneDepth: number) => number,
+  attractor: SceneAttractor | null,
 ): void {
   const size = Math.max(14, Math.min(w, h) * 0.026)
   g.strokeStyle = colour
@@ -610,8 +668,17 @@ function drawMovingArrows(
     // Each arrow gets a different orbit, heading and disparity fraction. This gives
     // the eyes several simultaneously moving depth planes to fuse, not duplicates.
     const phase = t * arrow.speed
-    const x = w * (0.34 + 0.32 * wrap01(arrow.xPhase + phase * 0.075))
-    const y = h * (0.35 + 0.3 * (0.5 + Math.sin(phase * 0.93 + arrow.yPhase * Math.PI * 2) * 0.5))
+    const baseX = w * (0.34 + 0.32 * wrap01(arrow.xPhase + phase * 0.075))
+    const baseY = h * (0.35 + 0.3 * (0.5 + Math.sin(phase * 0.93 + arrow.yPhase * Math.PI * 2) * 0.5))
+    const { x, y } = softlyAttractedPosition(
+      baseX,
+      baseY,
+      w,
+      h,
+      attractor,
+      phase * 0.82 + arrow.directionPhase * Math.PI * 2,
+      phase * 0.67 + arrow.yPhase * Math.PI * 2,
+    )
     const depth = 0.18 + 0.67 * (0.5 + Math.sin(phase * 0.67 + arrow.depthPhase * Math.PI * 2) * 0.5)
     const heading = phase * 0.68 + arrow.directionPhase * Math.PI * 2
     const shift = eyeSign * layerDisparityPx(depth) * 0.5
@@ -669,9 +736,13 @@ function drawShip(
   t: number,
   colour: string,
   shift: number,
+  attractor: SceneAttractor | null,
 ): void {
-  const x = w / 2 + Math.sin(t * 0.7) * w * 0.12 + shift
-  const y = h / 2 + Math.sin(t * 1.05 + 0.8) * h * 0.08
+  const baseX = w / 2 + Math.sin(t * 0.7) * w * 0.12
+  const baseY = h / 2 + Math.sin(t * 1.05 + 0.8) * h * 0.08
+  const attracted = softlyAttractedPosition(baseX, baseY, w, h, attractor, t * 0.61, t * 0.83 + 1.4)
+  const x = attracted.x + shift
+  const y = attracted.y
   const size = Math.min(w, h) * 0.065
   const tilt = Math.cos(t * 0.7) * 0.18
   g.save()
@@ -700,4 +771,29 @@ function drawShip(
   g.lineTo(-size * 1.05, size * 0.15)
   g.stroke()
   g.restore()
+}
+
+/**
+ * Pull an object's normal trajectory toward a small orbit around the clicked point.
+ * The blend never reaches 100%, so both its original drift and its local wobble remain.
+ */
+function softlyAttractedPosition(
+  baseX: number,
+  baseY: number,
+  w: number,
+  h: number,
+  attractor: SceneAttractor | null,
+  orbitXPhase: number,
+  orbitYPhase: number,
+): { x: number; y: number } {
+  if (!attractor) return { x: baseX, y: baseY }
+  const radius = Math.min(w, h) * 0.105
+  const localX = Math.cos(orbitXPhase) * radius
+  const localY = Math.sin(orbitYPhase) * radius * 0.72
+  const targetX = attractor.x * w + localX
+  const targetY = attractor.y * h + localY
+  return {
+    x: baseX + (targetX - baseX) * attractor.strength,
+    y: baseY + (targetY - baseY) * attractor.strength,
+  }
 }

@@ -18,6 +18,11 @@ import { drawLandoltC, renderRds } from '../core/anaglyph'
 import { rasterizeLetterMask, renderMaskedRds } from '../core/rdsMask'
 import { planStereoField, prismDioptresToPx } from '../core/geometry'
 import type { Calibration, ProcedureId, Settings } from '../core/types'
+import {
+  DEPTH_CINEMA_MAX_CONVERGENCE_PD,
+  DEPTH_CINEMA_MIN_PEAK_PD,
+  depthCinemaDivergenceLimit,
+} from '../core/depthCinemaSafety'
 
 /** Canvas colours, mirroring the procedures' own constants (the `--anaglyph-*` tokens). */
 const RED = '#ff2b2b'
@@ -224,8 +229,9 @@ function copyFor(id: ProcedureId): Copy {
         stimulus:
           'A red-and-blue DNA-like double helix sits diagonally in space, with two twisting rails joined by a ladder of fixed rungs. Through the glasses the nearer parts come forward and the far parts recede.',
         task:
-          'Keep both rails single. Nothing moves automatically: drag the helix or use separate X, Y, and Z controls to turn it in 3D, zoom it, stretch or compress its length, and hide the cross-lines whenever the picture feels too busy.',
+          'Follow the moving glow along one rail, keeping only the marked segment single and clear as its depth changes. Other parts may naturally double. Pause, reverse, or slow the trace at any time; you can also rotate, zoom, stretch, or hide the cross-lines.',
         keys: [
+          { key: 'Trace controls', means: 'Change its speed, pause or resume it, and reverse its direction.' },
           { key: 'Drag', means: 'Rotate freely around the X and Y axes.' },
           { key: 'X / Y / Z', means: 'Set every rotation axis precisely with its slider.' },
           { key: 'Wheel / pinch', means: 'Zoom the helix in or out.' },
@@ -311,7 +317,7 @@ function draw(id: ProcedureId, cal: Calibration): Drawn {
       paintHelixPreview(canvas, cal)
       return {
         canvas,
-        caveat: 'A frozen frame at a gentle 2Δ. The exercise stays equally still and changes only when you rotate, zoom, or adjust depth.',
+        caveat: 'A frozen frame at a gentle 2Δ. In the exercise, a binocular glow travels along one rail for you to follow.',
       }
   }
 }
@@ -618,6 +624,7 @@ function depthCinemaSettingsPreview(
   onSettingsChange: (settings: Settings) => void,
 ): HTMLElement {
   const cinema = settings.depthCinema
+  const divergenceLimit = depthCinemaDivergenceLimit(settings.calibration.viewingDistanceCm)
   const direction = el('select')
   direction.append(
     el('option', { value: 'convergence' }, 'Convergence — inward'),
@@ -625,20 +632,40 @@ function depthCinemaSettingsPreview(
   )
   direction.value = cinema.direction
   const reverse = el('input', { type: 'checkbox', checked: cinema.reversePlayback })
-  const convergencePeak = previewNumberInput(cinema.convergencePeakPd, 0.5, 40, 0.5)
-  const divergencePeak = previewNumberInput(cinema.divergencePeakPd, 0.5, 20, 0.5)
-  const ramp = previewNumberInput(cinema.rampSeconds, 5, 120, 1)
-  const arrows = previewNumberInput(cinema.movingArrowCount, 1, 3, 1)
+  const convergencePeak = previewNumberInput(
+    cinema.convergencePeakPd,
+    DEPTH_CINEMA_MIN_PEAK_PD,
+    DEPTH_CINEMA_MAX_CONVERGENCE_PD,
+    0.5,
+  )
+  const divergencePeak = previewNumberInput(
+    cinema.divergencePeakPd,
+    DEPTH_CINEMA_MIN_PEAK_PD,
+    divergenceLimit,
+    0.5,
+  )
+  const ramp = previewNumberInput(cinema.rampSeconds, 10, 120, 1)
+  const arrows = previewNumberInput(cinema.movingArrowCount, 0, 4, 1)
   const commit = (): void => {
     const next = {
       ...settings,
       depthCinema: {
         direction: direction.value === 'divergence' ? ('divergence' as const) : ('convergence' as const),
         reversePlayback: reverse.checked,
-        convergencePeakPd: clampPreviewValue(Number(convergencePeak.value), 0.5, 40, cinema.convergencePeakPd),
-        divergencePeakPd: clampPreviewValue(Number(divergencePeak.value), 0.5, 20, cinema.divergencePeakPd),
-        rampSeconds: clampPreviewValue(Number(ramp.value), 5, 120, cinema.rampSeconds),
-        movingArrowCount: Math.round(clampPreviewValue(Number(arrows.value), 1, 3, cinema.movingArrowCount)),
+        convergencePeakPd: clampPreviewValue(
+          Number(convergencePeak.value),
+          DEPTH_CINEMA_MIN_PEAK_PD,
+          DEPTH_CINEMA_MAX_CONVERGENCE_PD,
+          cinema.convergencePeakPd,
+        ),
+        divergencePeakPd: clampPreviewValue(
+          Number(divergencePeak.value),
+          DEPTH_CINEMA_MIN_PEAK_PD,
+          divergenceLimit,
+          cinema.divergencePeakPd,
+        ),
+        rampSeconds: clampPreviewValue(Number(ramp.value), 10, 120, cinema.rampSeconds),
+        movingArrowCount: Math.round(clampPreviewValue(Number(arrows.value), 0, 4, cinema.movingArrowCount)),
       },
     }
     onSettingsChange(next)
@@ -664,9 +691,13 @@ function depthCinemaSettingsPreview(
       'div',
       { class: 'grid-2' },
       previewSettingField('Time to peak (seconds)', ramp),
-      previewSettingField('Moving arrows (1–3)', arrows),
+      previewSettingField('Moving arrows (0–4)', arrows),
     ),
-    el('p', { class: 'gloss' }, 'Changes save immediately and will be used when you start this session.'),
+    el(
+      'p',
+      { class: 'gloss' },
+      `Cinema safety caps apply here: up to ${DEPTH_CINEMA_MAX_CONVERGENCE_PD}Δ convergence and ${divergenceLimit}Δ divergence at your viewing distance. Stop for doubling or discomfort; persistent double vision needs an eye exam before continuing. Changes save immediately.`,
+    ),
   )
 }
 
