@@ -2,12 +2,13 @@ import type { EyeSide } from '../core/types'
 import type { Procedure, ProcedureContext } from './base'
 import { createElapsedClock } from './base'
 import { prismDioptresToPx } from '../core/geometry'
+import { isTherapyPaused } from '../core/sessionState'
 import { el } from '../ui/router'
 
 const RED = '#ff2b2b'
 const BLUE = '#2b6bff'
 const TAU = Math.PI * 2
-const AUTO_ROTATION_DEGREES_PER_SECOND = 4
+const AUTO_ROTATION_DEGREES_PER_SECOND = 8
 
 interface ProjectedPoint {
   x: number
@@ -296,11 +297,15 @@ export const depthHelix: Procedure = {
     resize()
 
     let clockRaf = 0
-    let previousTraceMs = elapsed.ms()
-    const tick = (): void => {
-      const now = elapsed.ms()
-      const deltaMs = Math.max(0, now - previousTraceMs)
-      previousTraceMs = now
+    let previousFrameMs: number | null = null
+    const tick = (frameMs: number): void => {
+      const rawDeltaMs = previousFrameMs === null ? 0 : Math.max(0, frameMs - previousFrameMs)
+      previousFrameMs = frameMs
+      // Drive visual motion from requestAnimationFrame's monotonic timestamp.
+      // The therapy clock is for elapsed-session reporting and may intentionally
+      // stop; using it as a frame clock made the axis controls appear inert when
+      // that shared clock was paused. Cap resume gaps so nothing jumps forward.
+      const deltaMs = document.hidden || isTherapyPaused() ? 0 : Math.min(100, rawDeltaMs)
       if (!tracePaused) {
         // At 1×, one end-to-end pass takes 30 seconds. Bounce at each endpoint
         // instead of jumping across the helix and forcing an abrupt vergence step.
