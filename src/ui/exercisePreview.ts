@@ -232,7 +232,7 @@ function copyFor(id: ProcedureId): Copy {
           'Follow the moving glow along one rail, keeping only the marked segment single and clear as its depth changes. Other parts may naturally double. Pause, reverse, or slow the trace at any time; you can also rotate, zoom, stretch, or hide the cross-lines.',
         keys: [
           { key: 'Trace controls', means: 'Change its speed, pause or resume it, and reverse its direction.' },
-          { key: '▶ X / Y / Z', means: 'Start or pause slow automatic rotation independently on each axis.' },
+          { key: '▶ X / Y / Z', means: 'Start or pause automatic rotation independently; axis speed is adjustable from 0.25–2°/s.' },
           { key: 'Drag', means: 'Rotate freely around the X and Y axes.' },
           { key: 'X / Y / Z', means: 'Set every rotation axis precisely with its slider.' },
           { key: 'Wheel / pinch', means: 'Zoom the helix in or out.' },

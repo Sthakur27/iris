@@ -8,7 +8,6 @@ import { el } from '../ui/router'
 const RED = '#ff2b2b'
 const BLUE = '#2b6bff'
 const TAU = Math.PI * 2
-const AUTO_ROTATION_DEGREES_PER_SECOND = 12
 
 interface ProjectedPoint {
   x: number
@@ -65,6 +64,7 @@ export const depthHelix: Procedure = {
     let autoRotateXDirection = 1
     let autoRotateYDirection = 1
     let autoRotateZDirection = 1
+    let axisRotationSpeed = 1
     const rotationXInput = slider('-180', '180', '1', String(rotationX), 'X-axis rotation')
     const rotationYInput = slider('-180', '180', '1', String(rotationY), 'Y-axis rotation')
     const rotationZInput = slider('-180', '180', '1', String(rotationZ), 'Z-axis rotation')
@@ -72,6 +72,7 @@ export const depthHelix: Procedure = {
     const stretchInput = slider('50', '200', '1', String(stretch), 'Helix stretch')
     const depthInput = slider('0', '40', '0.5', String(depth), 'Fixed depth')
     const traceSpeedInput = slider('0.25', '2', '0.05', String(traceSpeed), 'Trace speed')
+    const axisRotationSpeedInput = slider('0.25', '2', '0.25', String(axisRotationSpeed), 'Axis rotation speed')
     const directionInput = el('select')
     directionInput.setAttribute('aria-label', 'Depth direction')
     directionInput.append(
@@ -85,6 +86,7 @@ export const depthHelix: Procedure = {
     const stretchValue = el('span', { class: 'cinema-control-value' }, `${stretch}%`)
     const depthValue = el('span', { class: 'cinema-control-value' }, `${depth.toFixed(1)}Δ`)
     const traceSpeedValue = el('span', { class: 'cinema-control-value' }, `${traceSpeed.toFixed(2)}×`)
+    const axisRotationSpeedValue = el('span', { class: 'cinema-control-value' }, `${axisRotationSpeed.toFixed(2)}°/s`)
     const rungsButton = el('button', { class: 'cinema-action helix-toggle', type: 'button' }, 'Cross-lines on')
     rungsButton.setAttribute('aria-pressed', 'true')
     const resetButton = el('button', { class: 'cinema-action helix-reset', type: 'button' }, 'Reset view')
@@ -105,6 +107,7 @@ export const depthHelix: Procedure = {
       el('label', { class: 'cinema-control' }, controlName('slider', 'stretch'), stretchInput, stretchValue),
       el('label', { class: 'cinema-control' }, controlName('−  +', 'depth'), depthInput, depthValue),
       el('label', { class: 'cinema-control' }, controlName('slider', 'trace speed'), traceSpeedInput, traceSpeedValue),
+      el('label', { class: 'cinema-control' }, controlName('slider', 'axis speed'), axisRotationSpeedInput, axisRotationSpeedValue),
       el('label', { class: 'helix-direction' }, el('span', { class: 'cinema-control-name' }, 'direction'), directionInput),
       tracePauseButton,
       traceReverseButton,
@@ -162,6 +165,7 @@ export const depthHelix: Procedure = {
       zoom = Number(zoomInput.value)
       stretch = Number(stretchInput.value)
       traceSpeed = Number(traceSpeedInput.value)
+      axisRotationSpeed = Number(axisRotationSpeedInput.value)
       direction = directionInput.value === 'divergence' ? 'divergence' : 'convergence'
       const maximumDepth = direction === 'convergence' ? 40 : 20
       depthInput.max = String(maximumDepth)
@@ -173,6 +177,7 @@ export const depthHelix: Procedure = {
       zoomValue.textContent = `${Math.round(zoom)}%`
       stretchValue.textContent = `${Math.round(stretch)}%`
       traceSpeedValue.textContent = `${traceSpeed.toFixed(2)}×`
+      axisRotationSpeedValue.textContent = `${axisRotationSpeed.toFixed(2)}°/s`
       depthValue.textContent = `${depth.toFixed(1)}Δ`
       prompt.textContent = showRungs
         ? 'Follow the moving glow along one rail and keep only that marked segment single and clear. Other depths may double.'
@@ -194,7 +199,7 @@ export const depthHelix: Procedure = {
       else if (event.code === 'Minus' || event.code === 'NumpadSubtract') { event.preventDefault(); nudge(depthInput, -0.5) }
       else if (event.code === 'Equal' || event.code === 'NumpadAdd') { event.preventDefault(); nudge(depthInput, 0.5) }
     }
-    for (const input of [rotationXInput, rotationYInput, rotationZInput, zoomInput, stretchInput, depthInput, traceSpeedInput]) {
+    for (const input of [rotationXInput, rotationYInput, rotationZInput, zoomInput, stretchInput, depthInput, traceSpeedInput, axisRotationSpeedInput]) {
       input.addEventListener('input', update)
     }
     directionInput.addEventListener('change', update)
@@ -313,7 +318,7 @@ export const depthHelix: Procedure = {
       previousRotationMs = now
       if (isTherapyPaused() || (!autoRotateX && !autoRotateY && !autoRotateZ)) return
 
-      const rotationStep = (deltaMs / 1000) * AUTO_ROTATION_DEGREES_PER_SECOND
+      const rotationStep = (deltaMs / 1000) * axisRotationSpeed
       if (autoRotateX) {
         autoRotateXDirection = advanceAxisRotation(
           rotationXInput,
