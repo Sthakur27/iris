@@ -77,6 +77,8 @@ export interface Settings {
   prescription: Prescription
   /** Insert an explicit look-away reset between reps (Iris addition, not in HTS). */
   restBetweenRepsMs: number
+  /** Whether an unanswered Jump Ductions rep advances and lowers its direction after 12 seconds. */
+  jumpDuctionsReduceOnTimeout: boolean
   /** Independent settings for the experimental animated vergence exercise. */
   depthCinema: DepthCinemaSettings
 }

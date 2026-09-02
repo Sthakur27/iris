@@ -248,15 +248,27 @@ export const settingsScreen: Screen = (root, nav) => {
       Math.round(settings.restBetweenRepsMs / 100) / 10,
       { min: 0, max: 10, step: 0.5 },
     )
+    const reduceJumpTimeout = el('input', {
+      type: 'checkbox',
+      checked: settings.jumpDuctionsReduceOnTimeout,
+    })
     pacing.append(
       el('h2', {}, 'Pacing'),
       rest.field,
+      el(
+        'label',
+        { class: 'toggle-row' },
+        reduceJumpTimeout,
+        el('span', {}, 'Jump Ductions — advance and reduce after 12 seconds with no answer'),
+      ),
       el(
         'p',
         { class: 'gloss' },
         'A short look-away between reps forces each rep to be a genuine step from relaxed to fused, rather ' +
           'than letting your eyes drift slowly from one target to the next and calling that a repetition. ' +
-          'Zero is the HTS behaviour; 1–2 seconds makes each rep harder and more honest.',
+          'Zero is the HTS behaviour; 1–2 seconds makes each rep harder and more honest. The Jump ' +
+          'Ductions timeout option is also available while the exercise is running. Turning it off ' +
+          'keeps the current panel up until you answer; pressing Space advances and lowers that direction.',
       ),
     )
     children.push(pacing)
@@ -410,6 +422,7 @@ export const settingsScreen: Screen = (root, nav) => {
           rockCpmGoal: cpmValue,
         },
         restBetweenRepsMs: Math.round(restValue * 1000),
+        jumpDuctionsReduceOnTimeout: reduceJumpTimeout.checked,
         depthCinema: {
           direction: cinemaDirection.value === 'divergence' ? 'divergence' : 'convergence',
           reversePlayback: cinemaReverse.checked,
@@ -431,12 +444,13 @@ export const settingsScreen: Screen = (root, nav) => {
         ...settings,
         prescription: structuredClone(DEFAULT_SETTINGS.prescription),
         restBetweenRepsMs: DEFAULT_SETTINGS.restBetweenRepsMs,
+        jumpDuctionsReduceOnTimeout: DEFAULT_SETTINGS.jumpDuctionsReduceOnTimeout,
         advancedMode: settings.advancedMode,
       }
       saveSettings(settings)
       message = {
         kind: 'good',
-        text: 'Prescription values reset to the HTS defaults. Calibration was left alone.',
+        text: 'Prescription and pacing values reset to their defaults. Calibration was left alone.',
       }
       render()
     })

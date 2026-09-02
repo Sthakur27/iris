@@ -5,8 +5,8 @@ import { prismDioptresToPx } from '../core/geometry'
 import { isTherapyPaused } from '../core/sessionState'
 import { el } from '../ui/router'
 
-const RED = '#ff2b2b'
-const BLUE = '#2b6bff'
+const RED = '#ff0000'
+const BLUE = '#0000ff'
 const TAU = Math.PI * 2
 
 interface ProjectedPoint {

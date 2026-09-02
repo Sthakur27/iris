@@ -25,8 +25,8 @@ import {
 } from '../core/depthCinemaSafety'
 
 /** Canvas colours, mirroring the procedures' own constants (the `--anaglyph-*` tokens). */
-const RED = '#ff2b2b'
-const BLUE = '#2b6bff'
+const RED = '#ff0000'
+const BLUE = '#0000ff'
 const NEUTRAL = '#dfe7ef'
 const HALO = '#5c6b7d'
 const FAINT = '#2f3841'

@@ -8,8 +8,9 @@ import { createVergenceProcedure } from './vergenceCore'
 export const convergence = createVergenceProcedure({
   id: 'convergence',
   label: 'Convergence',
-  goalPd: (p) => p.convergenceGoalPd,
-  signedDemandPd: (_rep, magnitudePd) => magnitudePd,
+  axes: ['convergence'],
+  axis: () => 'convergence',
+  goalPd: (_axis, p) => p.convergenceGoalPd,
   minRestMs: 0,
   instruction: 'Let the shape settle, then press the arrow key for where it is. Space if you cannot see it.',
 })

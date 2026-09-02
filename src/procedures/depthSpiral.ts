@@ -4,8 +4,8 @@ import { createElapsedClock } from './base'
 import { prismDioptresToPx } from '../core/geometry'
 import { el } from '../ui/router'
 
-const RED = '#ff2b2b'
-const BLUE = '#2b6bff'
+const RED = '#ff0000'
+const BLUE = '#0000ff'
 const LETTERS = ['B', 'J', 'U', 'M', 'H', 'I', 'D', 'P', 'V', 'A', 'Z', 'F', 'S', 'O', 'C', 'W', 'G', 'N', 'Q', 'K', 'Y', 'E', 'L', 'X']
 
 // A calm, fixed square coil: its only changes come from the two explicit controls.

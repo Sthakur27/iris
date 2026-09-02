@@ -19,8 +19,8 @@ import { el } from '../ui/router'
  * makes the scene feel spatial without pretending every object is at the headline Δ.
  */
 
-const RED = '#ff2b2b'
-const BLUE = '#2b6bff'
+const RED = '#ff0000'
+const BLUE = '#0000ff'
 const RELAX_FRACTION = 0.35
 const ASSUMED_IPD_CM = 6.3
 const CM_PER_INCH = 2.54

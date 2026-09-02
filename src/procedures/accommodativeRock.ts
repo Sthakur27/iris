@@ -41,8 +41,8 @@ type Direction = 'up' | 'down' | 'left' | 'right'
 const DIRECTIONS: readonly Direction[] = ['up', 'down', 'left', 'right'] as const
 
 /** The `--anaglyph-red` / `--anaglyph-blue` values, needed here as canvas colours. */
-const RED = '#ff2b2b'
-const BLUE = '#2b6bff'
+const RED = '#ff0000'
+const BLUE = '#0000ff'
 
 /** What an already-answered target (or the filler symbol after it) turns to. */
 const ANSWERED_COLOUR = '#c7d2de'

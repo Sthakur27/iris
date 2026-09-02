@@ -164,7 +164,7 @@ export function renderFlatFusion(
   for (const eye of ['left', 'right'] as const) {
     ctx.save()
     ctx.translate(shift[eye], 0)
-    ctx.strokeStyle = eye === redEye ? '#ff2b2b' : '#2b6bff'
+    ctx.strokeStyle = eye === redEye ? '#ff0000' : '#0000ff'
     ctx.lineWidth = 3
     ctx.globalCompositeOperation = 'lighter'
 

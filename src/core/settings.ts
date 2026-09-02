@@ -30,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
     rockCpmGoal: 13,
   },
   restBetweenRepsMs: 0,
+  jumpDuctionsReduceOnTimeout: true,
   depthCinema: {
     direction: 'convergence',
     reversePlayback: false,

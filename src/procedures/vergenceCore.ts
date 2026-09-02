@@ -8,6 +8,7 @@ import { planStereoField, prismDioptresToPx } from '../core/geometry'
 import { renderFlatFusion, renderRds } from '../core/anaglyph'
 import { createStagePlacement, loadStoredScale, saveStoredScale } from './stagePlacement'
 import { el } from '../ui/router'
+import { loadSettings, saveSettings } from '../core/settings'
 
 /**
  * Shared engine for the three disparity-vergence procedures.
@@ -21,6 +22,7 @@ import { el } from '../ui/router'
  */
 
 export type Direction = 'up' | 'down' | 'left' | 'right'
+export type VergenceAxis = 'convergence' | 'divergence'
 
 /**
  * Order matters: it is the index mapping used both for the RDS target position and
@@ -33,13 +35,12 @@ const DIRECTIONS: readonly Direction[] = ['up', 'down', 'left', 'right'] as cons
 export interface VergenceSpec {
   id: ProcedureId
   label: string
-  /** Peak magnitude the adaptive ladder is allowed to climb toward, in Δ. */
-  goalPd(p: Prescription): number
-  /**
-   * Signed base disparity for this rep at the current ladder magnitude.
-   * Positive = crossed = convergence. Negative = uncrossed = divergence.
-   */
-  signedDemandPd(rep: number, magnitudePd: number, p: Prescription): number
+  /** Independent adaptive tracks used by this procedure. */
+  axes: readonly VergenceAxis[]
+  /** Which track supplies this rep. */
+  axis(rep: number): VergenceAxis
+  /** Peak magnitude this track is allowed to climb toward, in Δ. */
+  goalPd(axis: VergenceAxis, p: Prescription): number
   /**
    * Reset enforced between reps even when `settings.restBetweenRepsMs` is 0.
    * Non-zero only for Jump Ductions, where stepping is the whole procedure.
@@ -62,6 +63,8 @@ const RESPONSE_TIMEOUT_MS = 12_000
  * random dots are not going to fuse for this user and fall back to flat targets.
  */
 const FLAT_FALLBACK_AFTER = 5
+/** Temporarily keep every vergence run on random dots, even after repeated misses. */
+const FLAT_FALLBACK_ENABLED: boolean = false
 
 const DOT_PX = 3
 const DOT_DENSITY = 0.5
@@ -82,6 +85,7 @@ interface Response {
   kind: ResponseKind
   direction: Direction | null
   latencyMs: number
+  timedOut?: boolean
 }
 
 /** Resolves after the browser has actually painted, so latency starts at stimulus onset. */
@@ -121,7 +125,11 @@ function linger(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
-function waitForResponse(onset: number, signal: AbortSignal): Promise<Response | null> {
+function waitForResponse(
+  onset: number,
+  signal: AbortSignal,
+  timeoutEnabled: () => boolean = () => true,
+): Promise<Response | null> {
   return new Promise((resolve) => {
     const finish = (r: Response | null): void => {
       window.removeEventListener('keydown', onKey)
@@ -166,7 +174,17 @@ function waitForResponse(onset: number, signal: AbortSignal): Promise<Response |
     // The clock stops while the tab is hidden, so a rep the user never actually saw
     // cannot manufacture one of these.
     const cancelTimer = visibleTimeout(
-      () => finish({ kind: 'cannotSee', direction: null, latencyMs: RESPONSE_TIMEOUT_MS }),
+      () => {
+        // Jump Ductions can opt out of automatic play. In that mode the current
+        // panel stays up until an actual answer or Space; silence is not a response.
+        if (!timeoutEnabled()) return
+        finish({
+          kind: 'cannotSee',
+          direction: null,
+          latencyMs: RESPONSE_TIMEOUT_MS,
+          timedOut: true,
+        })
+      },
       RESPONSE_TIMEOUT_MS,
     )
 
@@ -212,7 +230,7 @@ function neutraliseFlatTarget(
   for (const eye of ['left', 'right'] as const) {
     ctx.save()
     ctx.translate(shift[eye], 0)
-    ctx.strokeStyle = eye === opts.redEye ? '#ff2b2b' : '#2b6bff'
+    ctx.strokeStyle = eye === opts.redEye ? '#ff0000' : '#0000ff'
     ctx.lineWidth = 3
     ctx.globalCompositeOperation = 'lighter'
     ctx.beginPath()
@@ -274,14 +292,14 @@ class Feedback {
  *
  * Two rules make it safe to expose at all:
  *
- *  1. **Moving it suspends the staircase for the rest of the run**, not just for the
- *     next rep. A ladder that resumed from a hand-set level would carry that level
+ *  1. **Moving it suspends that direction's staircase for the rest of the run**, not
+ *     just for the next rep. A ladder that resumed from a hand-set level would carry that level
  *     forward as its own starting point and then report a threshold it never actually
  *     found — the contamination would outlive the reps that are marked. A one-rep
  *     suspension is also incoherent from the user's side: the ladder would drag the
  *     demand off whatever they set, so they would keep re-setting it and the run would
  *     end up an uninterpretable mixture. Taking the wheel is therefore a decision for
- *     the exercise, and the copy below says so before the first move and after it.
+ *     that direction, and the copy below says so before the first move and after it.
  *  2. **Every trial from that point carries `manualDemand`**, and none of them feed
  *     the "highest demand held" figure. A demand you chose is not evidence you can
  *     hold it.
@@ -292,7 +310,8 @@ class Feedback {
  * is marked `manualDemand` — the answer that follows was made against a demand the
  * user chose, whatever the ladder thought at onset.
  *
- * The "keep the ladder running" checkbox is the sanctioned way back to automatic.
+ * Jump Ductions exposes one slider per direction; setting one never moves or suspends
+ * the other. The "keep the ladder running" checkbox is the sanctioned way back to automatic.
  * With it checked, a drag re-seeds rather than takes over: the demand jumps to the
  * hand-set level and the ladder resumes adapting from there on the next rep. This
  * stays honest because a level only ever counts toward the headline figure after
@@ -302,13 +321,15 @@ class Feedback {
  */
 interface ManualDemand {
   node: HTMLElement
-  /** True while the slider has taken over and the ladder is suspended. */
-  engaged(): boolean
-  magnitudePd(): number
+  /** True while this direction's slider has taken over its ladder. */
+  engaged(axis: VergenceAxis): boolean
+  magnitudePd(axis: VergenceAxis): number
   /** Re-bound to a new screen ceiling after a resize, clamping the current value. */
   setCeiling(ceilingPd: number): void
   /** Track the staircase while it is still in charge, so the slider reads true. */
-  followLadder(magnitudePd: number): void
+  followLadder(axis: VergenceAxis, magnitudePd: number): void
+  /** Move one direction by a precise keyboard increment. */
+  nudge(axis: VergenceAxis, deltaPd: number): void
 }
 
 function clamp(value: number, lo: number, hi: number): number {
@@ -318,15 +339,22 @@ function clamp(value: number, lo: number, hi: number): number {
 function createManualDemand(opts: {
   floorPd: number
   ceilingPd: number
-  startPd: number
+  axes: readonly VergenceAxis[]
+  startPd: Record<VergenceAxis, number>
   /** Fired on every drag, with the new magnitude. The run repaints live from here. */
-  onSet(magnitudePd: number): void
+  onSet(axis: VergenceAxis, magnitudePd: number): void
 }): ManualDemand {
-  let engaged = false
+  const engaged: Record<VergenceAxis, boolean> = {
+    convergence: false,
+    divergence: false,
+  }
   let autoRun = false
   // A slider whose ends meet cannot be moved, so the ceiling is never the floor.
   let ceilingPd = Math.max(opts.floorPd + STEP_UP_PD, opts.ceilingPd)
-  let magnitudePd = clamp(opts.startPd, opts.floorPd, ceilingPd)
+  const magnitudes: Record<VergenceAxis, number> = {
+    convergence: clamp(opts.startPd.convergence, opts.floorPd, ceilingPd),
+    divergence: clamp(opts.startPd.divergence, opts.floorPd, ceilingPd),
+  }
 
   const node = el('div')
   node.style.cssText =
@@ -334,23 +362,28 @@ function createManualDemand(opts: {
     'border:1px solid var(--border);border-radius:8px;background:var(--bg-raised);' +
     'font-size:12px;color:var(--text-dim);z-index:20'
 
-  const header = el('div')
-  header.style.cssText =
-    'display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);margin-bottom:6px'
-  const value = el('span')
-  value.style.color = 'var(--text)'
-  header.append(el('span', {}, 'manual demand'), value)
+  const title = el('div', {}, 'manual demand')
+  title.style.cssText = 'font-family:var(--mono);margin-bottom:6px;color:var(--text)'
 
-  const slider = el('input', {
-    type: 'range',
-    min: String(opts.floorPd),
-    max: String(ceilingPd),
-    // Matches the 0.5Δ buckets the run scores levels in, so the slider cannot land
-    // between two of them.
-    step: '0.5',
-    value: String(magnitudePd),
+  const sliders = new Map<VergenceAxis, { input: HTMLInputElement; value: HTMLElement }>()
+  const sliderRows = opts.axes.map((axis) => {
+    const header = el('div')
+    header.style.cssText =
+      'display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);margin-top:6px'
+    const value = el('span')
+    value.style.color = 'var(--text)'
+    header.append(el('span', {}, axis), value)
+    const input = el('input', {
+      type: 'range',
+      min: String(opts.floorPd),
+      max: String(ceilingPd),
+      step: '0.5',
+      value: String(magnitudes[axis]),
+    })
+    input.style.cssText = 'width:100%;margin:0;display:block'
+    sliders.set(axis, { input, value })
+    return el('div', {}, header, input)
   })
-  slider.style.cssText = 'width:100%;margin:0;display:block'
 
   const autoBox = el('input', { type: 'checkbox' })
   const autoRow = el('label')
@@ -360,35 +393,58 @@ function createManualDemand(opts: {
 
   const note = el('div')
   note.style.cssText = 'margin-top:6px;line-height:1.45'
+  const shortcuts =
+    opts.axes.length > 1
+      ? el(
+          'div',
+          {},
+          'Keys: C +0.1Δ · Shift+C −0.1Δ convergence\nD +0.1Δ · Shift+D −0.1Δ divergence',
+        )
+      : null
+  if (shortcuts) shortcuts.style.cssText = 'margin-top:7px;white-space:pre-line;font-family:var(--mono)'
 
-  node.append(header, slider, autoRow, note)
+  node.append(title, ...sliderRows, autoRow, note)
+  if (shortcuts) node.append(shortcuts)
 
   function paint(): void {
-    value.textContent = `${magnitudePd.toFixed(1)}Δ`
-    note.textContent = engaged
-      ? 'Hand-set. The adaptive ladder is off for the rest of this exercise, and these reps are marked — they do not count toward the demand you held.'
+    for (const [axis, control] of sliders) {
+      control.value.textContent = `${magnitudes[axis].toFixed(1)}Δ`
+    }
+    const anyEngaged = opts.axes.some((axis) => engaged[axis])
+    note.textContent = anyEngaged
+      ? 'Hand-set. Each adjusted direction’s adaptive ladder is off for the rest of this exercise, and those reps are marked — they do not count toward the demand you held.'
       : autoRun
         ? 'Ladder on. Dragging changes the demand on screen immediately and the ladder adapts from there; reps you adjusted are marked.'
-        : `Advanced mode. Drag to set the demand yourself, up to this screen’s ${ceilingPd.toFixed(1)}Δ ceiling. Doing so stops the adaptive ladder for the rest of this exercise.`
+        : `Advanced mode. Drag to set the demand yourself, up to this screen’s ${ceilingPd.toFixed(1)}Δ ceiling. Doing so stops that direction’s adaptive ladder for the rest of this exercise.`
   }
 
-  slider.addEventListener('input', () => {
-    const next = Number(slider.value)
-    if (!Number.isFinite(next)) return
-    magnitudePd = clamp(next, opts.floorPd, ceilingPd)
-    if (!autoRun) engaged = true
+  function setByHand(axis: VergenceAxis, next: number): void {
+    magnitudes[axis] = clamp(Math.round(next * 10) / 10, opts.floorPd, ceilingPd)
+    const control = sliders.get(axis)
+    if (control) control.input.value = String(magnitudes[axis])
+    if (!autoRun) engaged[axis] = true
     paint()
-    opts.onSet(magnitudePd)
-  })
+    opts.onSet(axis, magnitudes[axis])
+  }
 
-  // The arrow keys are the answer channel. A slider that kept focus after being
-  // dragged would quietly eat every answer that followed, so it lets go on commit.
-  slider.addEventListener('change', () => slider.blur())
+  for (const [axis, control] of sliders) {
+    control.input.addEventListener('input', () => {
+      const next = Number(control.input.value)
+      if (!Number.isFinite(next)) return
+      setByHand(axis, next)
+    })
+
+    // The arrow keys are the answer channel. A slider that kept focus after being
+    // dragged would quietly eat every answer that followed, so it lets go on commit.
+    control.input.addEventListener('change', () => control.input.blur())
+  }
 
   autoBox.addEventListener('change', () => {
     autoRun = autoBox.checked
     // Release a suspended ladder: it resumes from the level currently held.
-    if (autoRun && engaged) engaged = false
+    if (autoRun) {
+      for (const axis of opts.axes) engaged[axis] = false
+    }
     // Same reason as the slider: space is the answer channel, and a focused
     // checkbox would swallow it as a toggle instead.
     autoBox.blur()
@@ -399,20 +455,27 @@ function createManualDemand(opts: {
 
   return {
     node,
-    engaged: () => engaged,
-    magnitudePd: () => magnitudePd,
+    engaged: (axis) => engaged[axis],
+    magnitudePd: (axis) => magnitudes[axis],
     setCeiling(next) {
       ceilingPd = Math.max(opts.floorPd + STEP_UP_PD, next)
-      magnitudePd = clamp(magnitudePd, opts.floorPd, ceilingPd)
-      slider.max = String(ceilingPd)
-      slider.value = String(magnitudePd)
+      for (const [axis, control] of sliders) {
+        magnitudes[axis] = clamp(magnitudes[axis], opts.floorPd, ceilingPd)
+        control.input.max = String(ceilingPd)
+        control.input.value = String(magnitudes[axis])
+      }
       paint()
     },
-    followLadder(next) {
-      if (engaged) return
-      magnitudePd = clamp(next, opts.floorPd, ceilingPd)
-      slider.value = String(magnitudePd)
+    followLadder(axis, next) {
+      if (engaged[axis]) return
+      magnitudes[axis] = clamp(next, opts.floorPd, ceilingPd)
+      const control = sliders.get(axis)
+      if (control) control.input.value = String(magnitudes[axis])
       paint()
+    },
+    nudge(axis, deltaPd) {
+      if (!opts.axes.includes(axis)) return
+      setByHand(axis, magnitudes[axis] + deltaPd)
     },
   }
 }
@@ -430,7 +493,11 @@ export function createVergenceProcedure(spec: VergenceSpec): Procedure {
 async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<void> {
   const { signal, settings } = ctx
   const cal = settings.calibration
-  const goalPd = Math.max(FLOOR_PD, spec.goalPd(settings.prescription))
+  const goals: Record<VergenceAxis, number> = {
+    convergence: Math.max(FLOOR_PD, spec.goalPd('convergence', settings.prescription)),
+    divergence: Math.max(FLOOR_PD, spec.goalPd('divergence', settings.prescription)),
+  }
+  const fieldGoalPd = Math.max(...spec.axes.map((axis) => goals[axis]))
 
   // --- DOM -----------------------------------------------------------------
   const stage = el('div', { class: 'stage' })
@@ -477,15 +544,48 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
   stage.append(canvasWrap, restDot, hud, prompt, controlsWrap)
   ctx.root.append(stage)
 
+  // Jump Ductions can wait indefinitely for a real response instead of treating
+  // silence as a response. This stays live and persists for the next run too.
+  let advanceOnTimeout = settings.jumpDuctionsReduceOnTimeout
+  let timeoutControl: HTMLElement | null = null
+  if (spec.id === 'jumpDuctions') {
+    const timeoutBox = el('input', { type: 'checkbox', checked: advanceOnTimeout })
+    timeoutControl = el(
+      'label',
+      {},
+      timeoutBox,
+      el(
+        'span',
+        {},
+        `advance and reduce after ${RESPONSE_TIMEOUT_MS / 1000}s with no answer`,
+      ),
+    )
+    timeoutControl.style.cssText =
+      'position:fixed;left:16px;top:72px;display:flex;gap:7px;align-items:center;' +
+      'padding:8px 10px;border:1px solid var(--border);border-radius:8px;' +
+      'background:var(--bg-raised);font-size:12px;color:var(--text-dim);z-index:20;cursor:pointer'
+    timeoutBox.addEventListener('change', () => {
+      advanceOnTimeout = timeoutBox.checked
+      const latest = loadSettings()
+      saveSettings({ ...latest, jumpDuctionsReduceOnTimeout: advanceOnTimeout })
+      timeoutBox.blur()
+    })
+    stage.append(timeoutControl)
+  }
+
   const feedback = new Feedback()
   const monitor = new IntegrityMonitor(4)
+  const trackMonitors: Record<VergenceAxis, IntegrityMonitor> = {
+    convergence: new IntegrityMonitor(4),
+    divergence: new IntegrityMonitor(4),
+  }
   const fatigue = new FatigueMonitor()
 
   // --- Geometry ------------------------------------------------------------
   // The field is sized once, for the top of this procedure's ladder, so that the two
   // eye views keep a dominant common region at every demand the ladder can reach.
   let popPx = popDisparityPx(cal)
-  let field = planField(goalPd, popPx, cal)
+  let field = planField(fieldGoalPd, popPx, cal)
 
   /*
    * Refuse to run in a window that cannot present a real demand.
@@ -515,20 +615,25 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
 
   const onResize = (): void => {
     popPx = popDisparityPx(cal)
-    field = planField(goalPd, popPx, cal)
+    field = planField(fieldGoalPd, popPx, cal)
     manual?.setCeiling(field.ceilingPd)
-    // A hand-set demand answers only to the screen ceiling; the ladder also answers
-    // to the prescribed goal.
-    magnitude = Math.min(
-      magnitude,
-      manual?.engaged() === true ? Math.max(FLOOR_PD, field.ceilingPd) : reachableGoal(),
-    )
+    for (const axis of spec.axes) {
+      // A hand-set demand answers only to the screen ceiling; the ladder also
+      // answers to that direction's prescribed goal.
+      magnitudes[axis] = Math.min(
+        magnitudes[axis],
+        manual?.engaged(axis) === true
+          ? Math.max(FLOOR_PD, field.ceilingPd)
+          : reachableGoal(axis),
+      )
+    }
     placement.apply()
     paintHud()
   }
   window.addEventListener('resize', onResize)
 
-  const reachableGoal = (): number => Math.max(FLOOR_PD, Math.min(goalPd, field.ceilingPd))
+  const reachableGoal = (axis: VergenceAxis): number =>
+    Math.max(FLOOR_PD, Math.min(goals[axis], field.ceilingPd))
 
   const placement = createStagePlacement({
     procedureId: spec.id,
@@ -561,9 +666,21 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
   // --- Adaptive state ------------------------------------------------------
   // Start low deliberately: the ladder should climb on evidence, not drop the user
   // straight into a demand they cannot fuse and let them guess their way through it.
-  let magnitude = Math.min(reachableGoal(), Math.max(FLOOR_PD, goalPd * 0.25))
+  const magnitudes: Record<VergenceAxis, number> = {
+    convergence: Math.min(
+      reachableGoal('convergence'),
+      Math.max(FLOOR_PD, goals.convergence * 0.25),
+    ),
+    divergence: Math.min(
+      reachableGoal('divergence'),
+      Math.max(FLOOR_PD, goals.divergence * 0.25),
+    ),
+  }
   let rep = 0
-  let consecutiveCannotSee = 0
+  const consecutiveCannotSee: Record<VergenceAxis, number> = {
+    convergence: 0,
+    divergence: 0,
+  }
   let mode: 'rds' | 'flat' = 'rds'
   let currentSignedPd = 0
 
@@ -585,16 +702,17 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     seed: 0,
     /** The demand under the current stimulus was changed by hand mid-rep. */
     handSet: false,
-    /** A drag landed between reps; the next rep runs on it and must be marked. */
-    pendingMark: false,
+    /** A drag landed outside that direction's rep; its next rep must be marked. */
+    pendingMarks: new Set<VergenceAxis>(),
     /** Exact target centre in canvas pixels from the most recent renderer pass. */
     hitPoint: null as { x: number; y: number } | null,
   }
 
   /** Draws the current stimulus at the current magnitude. Safe to call mid-rep. */
   function paintStimulus(): void {
-    const requested = spec.signedDemandPd(rep, magnitude, settings.prescription)
-    currentSignedPd = Math.sign(requested) * Math.min(Math.abs(requested), field.ceilingPd)
+    const axis = spec.axis(rep)
+    const sign = axis === 'convergence' ? 1 : -1
+    currentSignedPd = sign * Math.min(magnitudes[axis], field.ceilingPd)
     paintHud()
     const disparityPx = prismDioptresToPx(currentSignedPd, cal)
     if (mode === 'rds') {
@@ -644,13 +762,14 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     ? createManualDemand({
         floorPd: FLOOR_PD,
         ceilingPd: field.ceilingPd,
-        startPd: magnitude,
-        onSet(pd) {
-          magnitude = clamp(pd, FLOOR_PD, Math.max(FLOOR_PD, field.ceilingPd))
-          if (!live.onScreen) {
-            // Mid-rest drag: nothing to repaint, but the rep it lands on is still
-            // a demand the user chose, so it must carry the mark.
-            live.pendingMark = true
+        axes: spec.axes,
+        startPd: magnitudes,
+        onSet(axis, pd) {
+          magnitudes[axis] = clamp(pd, FLOOR_PD, Math.max(FLOOR_PD, field.ceilingPd))
+          if (!live.onScreen || spec.axis(rep) !== axis) {
+            // Nothing for this direction is on screen, but its next rep still runs
+            // at a demand the user chose and must carry the mark.
+            live.pendingMarks.add(axis)
             return
           }
           live.handSet = true
@@ -661,13 +780,39 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     : null
   if (manual) stage.append(manual.node)
 
+  const onDemandShortcut = (event: KeyboardEvent): void => {
+    if (!manual || spec.id !== 'jumpDuctions' || event.ctrlKey || event.metaKey || event.altKey) return
+    if (
+      event.target instanceof HTMLInputElement ||
+      event.target instanceof HTMLTextAreaElement ||
+      event.target instanceof HTMLSelectElement
+    ) {
+      return
+    }
+    const key = event.key.toLowerCase()
+    const axis: VergenceAxis | null =
+      key === 'c' ? 'convergence' : key === 'd' ? 'divergence' : null
+    if (!axis) return
+    event.preventDefault()
+    manual.nudge(axis, event.shiftKey ? -0.1 : 0.1)
+  }
+  if (manual && spec.id === 'jumpDuctions') {
+    window.addEventListener('keydown', onDemandShortcut)
+  }
+
   /**
    * The real outcome measure: the highest demand the user actually held with
    * trustworthy responses. A raw peak demand is meaningless if it was reached by
    * guessing, so a level only counts once it has enough non-anticipatory, correct
    * answers behind it.
    */
-  const levelStats = new Map<number, { valid: number; correct: number }>()
+  const levelStats: Record<
+    VergenceAxis,
+    Map<number, { valid: number; correct: number }>
+  > = {
+    convergence: new Map(),
+    divergence: new Map(),
+  }
 
   const elapsed = createElapsedClock()
   const clock = window.setInterval(() => paintClock(), 500)
@@ -677,15 +822,16 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
   }
 
   function paintHud(): void {
+    const axis = spec.axis(rep)
     const sense = currentSignedPd >= 0 ? 'crossed' : 'uncrossed'
     // Say it in the HUD too, not only next to the slider: what the demand is and
     // where it came from are the same fact.
-    const source = manual?.engaged() === true || live.handSet ? ' · hand-set' : ''
+    const source = manual?.engaged(axis) === true || live.handSet ? ' · hand-set' : ''
     hudDemand.textContent = `${Math.abs(currentSignedPd).toFixed(1)}Δ ${sense}${source}`
     // HTS lets you fail forever at a demand your screen physically cannot display.
     hudWarning.textContent =
-      field.ceilingPd < goalPd
-        ? `screen ceiling ${field.ceilingPd.toFixed(1)}Δ — below the ${goalPd.toFixed(0)}Δ goal; sit closer or use a wider display`
+      field.ceilingPd < goals[axis]
+        ? `screen ceiling ${field.ceilingPd.toFixed(1)}Δ — below the ${goals[axis].toFixed(0)}Δ ${axis} goal; sit closer or use a wider display`
         : ''
   }
 
@@ -737,18 +883,19 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       // for the rest of the run; otherwise the slider mirrors the ladder. Mid-rep
       // drags land through `paintStimulus` and mark the rep via `live.handSet`.
       let handSet = false
+      const axis = spec.axis(rep)
       if (manual) {
-        if (manual.engaged()) {
-          magnitude = Math.min(manual.magnitudePd(), field.ceilingPd)
+        if (manual.engaged(axis)) {
+          magnitudes[axis] = Math.min(manual.magnitudePd(axis), field.ceilingPd)
           handSet = true
           everLatched = true
         } else {
-          manual.followLadder(magnitude)
+          manual.followLadder(axis, magnitudes[axis])
         }
       }
-      if (live.pendingMark) {
+      if (live.pendingMarks.has(axis)) {
         handSet = true
-        live.pendingMark = false
+        live.pendingMarks.delete(axis)
       }
       if (handSet) everManual = true
 
@@ -765,7 +912,11 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       const onset = await afterPaint(signal)
       if (signal.aborted) break
 
-      const response = await waitForResponse(onset, signal)
+      const response = await waitForResponse(
+        onset,
+        signal,
+        () => spec.id !== 'jumpDuctions' || advanceOnTimeout,
+      )
       live.onScreen = false
       if (!response) break
 
@@ -803,6 +954,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
         ...(handSet ? { manualDemand: true } : {}),
       }
       monitor.push(trial)
+      trackMonitors[axis].push(trial)
       fatigue.push(trial)
       // Forward the whole trial, not a hand-picked subset. The earlier version
       // rebuilt it field by field and silently dropped `kind` and `isCatch`, which
@@ -817,17 +969,23 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       // would feed exists to say the staircase found the demand, which it did not.
       if (!handSet && !isCatch && response.kind === 'answer' && !anticipated) {
         const key = Math.round(Math.abs(currentSignedPd) * 2) / 2
-        const bucket = levelStats.get(key) ?? { valid: 0, correct: 0 }
+        const bucket = levelStats[axis].get(key) ?? { valid: 0, correct: 0 }
         bucket.valid += 1
         if (correct) bucket.correct += 1
-        levelStats.set(key, bucket)
+        levelStats[axis].set(key, bucket)
       }
 
       // --- Feedback -------------------------------------------------------
       if (response.kind === 'cannotSee') {
         feedback.tone('neutral')
         flash(canvasWrap, 'var(--accent-dim)')
-        setPrompt(isCatch ? 'Correct — there was nothing there.' : 'Noted. Dropping the demand.')
+        setPrompt(
+          isCatch
+            ? 'Correct — there was nothing there.'
+            : response.timedOut && !advanceOnTimeout
+              ? 'No answer. Keeping this direction at the same demand.'
+              : 'Noted. Dropping this direction’s demand.',
+        )
       } else if (anticipated) {
         feedback.tone('neutral')
         flash(canvasWrap, 'var(--warn)')
@@ -848,17 +1006,25 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       if (response.kind === 'answer' && !isCatch) await sleep(260, signal)
 
       // --- Flat-fusion fallback -------------------------------------------
-      if (response.kind === 'cannotSee' && !isCatch) consecutiveCannotSee += 1
-      else if (response.kind === 'answer') consecutiveCannotSee = 0
+      if (response.kind === 'cannotSee' && !isCatch) consecutiveCannotSee[axis] += 1
+      else if (response.kind === 'answer') consecutiveCannotSee[axis] = 0
 
-      const atFloor = magnitude <= FLOOR_PD + 0.01
-      if (mode === 'rds' && atFloor && consecutiveCannotSee >= FLAT_FALLBACK_AFTER) {
+      const atFloor = magnitudes[axis] <= FLOOR_PD + 0.01
+      if (
+        FLAT_FALLBACK_ENABLED &&
+        mode === 'rds' &&
+        atFloor &&
+        consecutiveCannotSee[axis] >= FLAT_FALLBACK_AFTER
+      ) {
         // Some people genuinely cannot resolve a random-dot stereogram — stereo-deficient,
         // or simply not yet. Second-degree (superimposition) targets still train fusional
         // vergence, so switch rather than let the user grind at an impossible task.
         mode = 'flat'
-        consecutiveCannotSee = 0
+        consecutiveCannotSee.convergence = 0
+        consecutiveCannotSee.divergence = 0
         monitor.reset()
+        trackMonitors.convergence.reset()
+        trackMonitors.divergence.reset()
         setPrompt('Random dots weren’t fusing, so these are simpler targets. Find the odd one out.')
       }
 
@@ -872,14 +1038,14 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       // report it later as a level it found. On a re-seed rep ("keep the ladder
       // running") the skip is one rep long: the ladder resumes from the seeded level
       // on the next rep, which is exactly what the checkbox promises.
-      if (!handSet) {
-        const recommendation = monitor.recommendation()
+      if (!handSet && !(response.timedOut && !advanceOnTimeout)) {
+        const recommendation = trackMonitors[axis].recommendation()
         if (response.kind === 'cannotSee' && !isCatch) {
-          magnitude = Math.max(FLOOR_PD, magnitude - STEP_DOWN_PD)
-        } else if (recommendation === 'increase' && !monitor.verdict().atChance) {
-          magnitude = Math.min(reachableGoal(), magnitude + STEP_UP_PD)
+          magnitudes[axis] = Math.max(FLOOR_PD, magnitudes[axis] - STEP_DOWN_PD)
+        } else if (recommendation === 'increase' && !trackMonitors[axis].verdict().atChance) {
+          magnitudes[axis] = Math.min(reachableGoal(axis), magnitudes[axis] + STEP_UP_PD)
         } else if (recommendation === 'decrease') {
-          magnitude = Math.max(FLOOR_PD, magnitude - STEP_DOWN_PD)
+          magnitudes[axis] = Math.max(FLOOR_PD, magnitudes[axis] - STEP_DOWN_PD)
         }
       }
 
@@ -901,6 +1067,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     window.clearInterval(clock)
     elapsed.dispose()
     window.removeEventListener('resize', onResize)
+    window.removeEventListener('keydown', onDemandShortcut)
     feedback.close()
     stage.remove()
   }
@@ -913,9 +1080,13 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
    */
   async function showSummary(): Promise<void> {
     const verdict = monitor.verdict()
-    let sustained = 0
-    for (const [pd, s] of levelStats) {
-      if (s.valid >= 3 && s.correct / s.valid >= 0.75 && pd > sustained) sustained = pd
+    const sustained: Record<VergenceAxis, number> = { convergence: 0, divergence: 0 }
+    for (const axis of spec.axes) {
+      for (const [pd, s] of levelStats[axis]) {
+        if (s.valid >= 3 && s.correct / s.valid >= 0.75 && pd > sustained[axis]) {
+          sustained[axis] = pd
+        }
+      }
     }
 
     canvasWrap.style.display = 'none'
@@ -924,11 +1095,14 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     hudWarning.textContent = ''
     controlsWrap.style.display = 'none'
     if (manual) manual.node.style.display = 'none'
+    if (timeoutControl) timeoutControl.style.display = 'none'
 
-    promptMain.textContent =
-      sustained > 0
-        ? `Highest demand you held with trustworthy responses: ${sustained.toFixed(1)}Δ`
-        : 'No demand level had enough trustworthy responses to score. That is a result, not a failure.'
+    const scored = spec.axes.filter((axis) => sustained[axis] > 0)
+    promptMain.textContent = scored.length
+      ? `Highest demand you held with trustworthy responses: ${scored
+          .map((axis) => `${sustained[axis].toFixed(1)}Δ ${axis}`)
+          .join(' · ')}`
+      : 'No demand level had enough trustworthy responses to score. That is a result, not a failure.'
 
     const notes = verdict.trustworthy ? [] : [...verdict.notes]
     if (everLatched) {

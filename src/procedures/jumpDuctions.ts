@@ -10,24 +10,20 @@ import { createVergenceProcedure } from './vergenceCore'
  * only a step stimulus recruits it — a smooth ramp lets tonic adaptation quietly do
  * the work, which is why the enforced reset below is not optional here.
  *
- * Divergence reps are scaled down by the ratio of the two goals, because a magnitude
- * that is comfortable base-out is far outside the physiological range base-in.
+ * Convergence and divergence have independent ladders. Their physiological ranges
+ * differ, and progress (or a missed response) in one direction must not silently
+ * move the other direction too.
  */
 export const jumpDuctions = createVergenceProcedure({
   id: 'jumpDuctions',
   label: 'Jump Ductions',
-  goalPd: (p) => p.convergenceGoalPd,
-  signedDemandPd: (rep, magnitudePd, p) => {
-    const isConvergenceRep = rep % 2 === 0
-    if (isConvergenceRep) return magnitudePd
-
-    const ratio =
-      p.convergenceGoalPd > 0 ? Math.min(1, p.divergenceGoalPd / p.convergenceGoalPd) : 1
-    return -magnitudePd * ratio
-  },
+  axes: ['convergence', 'divergence'],
+  axis: (rep) => (rep % 2 === 0 ? 'convergence' : 'divergence'),
+  goalPd: (axis, p) =>
+    axis === 'convergence' ? p.convergenceGoalPd : p.divergenceGoalPd,
   // Enforced regardless of the user's rest setting: without a return to baseline
   // between reps, the next demand is not a step and the procedure trains nothing.
-  minRestMs: 1200,
+  minRestMs: 600,
   instruction:
     'The demand jumps between near and far each turn. Let it settle, then press the arrow key. Space if you cannot see it.',
 })
