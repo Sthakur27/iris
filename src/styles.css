@@ -346,6 +346,18 @@ label {
   font-variant-numeric: tabular-nums;
 }
 
+.rings-controls .cinema-control {
+  grid-template-columns: 104px minmax(140px, 220px) 132px;
+}
+
+.rings-auto {
+  min-width: 0;
+  flex-direction: row;
+  justify-content: center;
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
 .helix-canvas {
   cursor: grab;
   touch-action: none;

@@ -124,6 +124,7 @@ export async function runSession(
     const result: ProcedureResult = {
       procedure: step.id,
       startedAt,
+      plannedDurationMs: durationMs,
       durationMs: Date.now() - startedAt,
       trials,
     }

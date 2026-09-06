@@ -9,6 +9,7 @@ export type ProcedureId =
   | 'jumpDuctions'
   | 'cyclopeanLetters'
   | 'depthCinema'
+  | 'depthRings'
   | 'depthSpiral'
   | 'depthHelix'
 
@@ -140,6 +141,8 @@ export interface Trial {
 export interface ProcedureResult {
   procedure: ProcedureId
   startedAt: number
+  /** Intended active exercise time, retained so Results can replay the same length. */
+  plannedDurationMs?: number
   durationMs: number
   trials: Trial[]
 }

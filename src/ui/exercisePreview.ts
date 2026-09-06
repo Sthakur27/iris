@@ -57,6 +57,7 @@ const PROCEDURE_IDS: readonly ProcedureId[] = [
   'jumpDuctions',
   'cyclopeanLetters',
   'depthCinema',
+  'depthRings',
   'depthSpiral',
   'depthHelix',
 ]
@@ -216,6 +217,17 @@ function copyFor(id: ProcedureId): Copy {
           'reverse the movie so the scene moves closer. There are no answers to enter.',
         keys: [{ key: 'Just watch', means: 'Keep the ship single and comfortable; pause if it doubles.' }],
       }
+    case 'depthRings':
+      return {
+        stimulus:
+          'Six small red-and-blue rings sit motionless at the centre. Through the glasses they become one compact stack with each ring at a slightly different depth.',
+        task:
+          'Keep all six rings single. Move the whole stack inward or outward with one slider, then widen or flatten the distance between its layers with the other. Each slider can also sweep slowly back and forth on its own.',
+        keys: [
+          { key: '▶ stack depth', means: 'Slowly sweep the complete stack between divergence and convergence.' },
+          { key: '▶ ring spread', means: 'Slowly widen and flatten the depth spacing between rings.' },
+        ],
+      }
     case 'depthSpiral':
       return {
         stimulus:
@@ -307,6 +319,13 @@ function draw(id: ProcedureId, cal: Calibration): Drawn {
         canvas,
         caveat:
           'A frozen frame at a gentle 2Δ. The exercise animates continuously and uses its own direction, peak, and ramp time from Settings.',
+      }
+    case 'depthRings':
+      paintDepthRingsPreview(canvas, cal)
+      return {
+        canvas,
+        caveat:
+          'This is the exercise itself at its initial 2Δ convergence depth and 1.3Δ ring spread. The six rings remain this size and never animate.',
       }
     case 'depthSpiral':
       paintSpiralPreview(canvas, cal)
@@ -424,6 +443,61 @@ function paintCinemaPreview(canvas: HTMLCanvasElement, cal: Calibration): void {
   }
   g.globalCompositeOperation = 'source-over'
   g.globalAlpha = 1
+}
+
+function paintDepthRingsPreview(canvas: HTMLCanvasElement, cal: Calibration): void {
+  const g = blankCanvas(canvas)
+  if (!g) return
+  paintDepthRings(
+    g,
+    PREVIEW_WIDTH_PX / 2,
+    PREVIEW_HEIGHT_PX / 2,
+    PREVIEW_HEIGHT_PX,
+    cal,
+    2,
+    1.3,
+  )
+}
+
+function paintDepthRings(
+  g: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  minDimension: number,
+  cal: Calibration,
+  stackDepthPd: number,
+  spreadPd: number,
+): void {
+  const direction = stackDepthPd < 0 ? -1 : 1
+  const magnitude = Math.abs(stackDepthPd)
+  const actualSpread = Math.min(magnitude, Math.max(0, spreadPd))
+  const innerRadius = Math.max(18, minDimension * 0.035)
+  const outerRadius = Math.max(54, minDimension * 0.36)
+  g.save()
+  g.globalCompositeOperation = 'lighter'
+  for (const eye of ['left', 'right'] as const) {
+    const colour = eye === cal.redEye ? RED : BLUE
+    const eyeSign = eye === 'left' ? 1 : -1
+    g.strokeStyle = colour
+    g.lineWidth = 1.5
+    g.globalAlpha = 0.84
+    for (let i = 0; i < 6; i++) {
+      const fraction = i / 5
+      const depthFraction = direction > 0 ? fraction : 1 - fraction
+      const demandPd = direction * (magnitude - actualSpread + actualSpread * depthFraction)
+      const shift = eyeSign * prismDioptresToPx(demandPd, cal) * 0.5
+      g.beginPath()
+      g.arc(
+        cx + shift,
+        cy,
+        innerRadius + fraction * (outerRadius - innerRadius),
+        0,
+        Math.PI * 2,
+      )
+      g.stroke()
+    }
+  }
+  g.restore()
 }
 
 /**

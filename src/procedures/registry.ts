@@ -8,6 +8,7 @@ import { pursuits } from './pursuits'
 import { saccades } from './saccades'
 import { cyclopeanLetters } from './cyclopeanLetters'
 import { depthCinema } from './depthCinema'
+import { depthRings } from './depthRings'
 import { depthSpiral } from './depthSpiral'
 import { depthHelix } from './depthHelix'
 
@@ -22,6 +23,7 @@ export const PROCEDURE_REGISTRY: Map<ProcedureId, Procedure> = new Map(
     saccades,
     cyclopeanLetters,
     depthCinema,
+    depthRings,
     depthSpiral,
     depthHelix,
   ].map((p) => [p.id, p]),

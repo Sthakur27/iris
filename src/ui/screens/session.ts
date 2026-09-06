@@ -12,6 +12,7 @@ import {
   DAILY_PROTOCOL,
   DEPTH_CINEMA,
   DEPTH_HELIX,
+  DEPTH_RINGS,
   DEPTH_SPIRAL,
   JUMP_DUCTIONS,
   jumpDuctionsUnlocked,
@@ -58,6 +59,7 @@ export const sessionScreen: Screen = (root, nav) => {
       JUMP_DUCTIONS,
       CYCLOPEAN_LETTERS,
       DEPTH_CINEMA,
+      DEPTH_RINGS,
       DEPTH_SPIRAL,
       DEPTH_HELIX,
     ].find(

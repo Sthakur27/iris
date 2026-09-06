@@ -105,6 +105,13 @@ export const DEPTH_CINEMA = {
   seconds: 420,
 }
 
+/** Still, compact concentric rings with a hand-set stack depth and depth spread. */
+export const DEPTH_RINGS = {
+  id: 'depthRings' as const,
+  label: 'Depth Rings',
+  seconds: 420,
+}
+
 /** Fixed, lettered square-spiral fusion target inspired by in-clinic vectograms. */
 export const DEPTH_SPIRAL = {
   id: 'depthSpiral' as const,

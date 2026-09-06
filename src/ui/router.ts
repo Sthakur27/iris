@@ -98,14 +98,16 @@ export function createRouter(root: HTMLElement, screens: Record<ScreenId, Screen
       render(screen, params, detail ?? null)
       return
     }
-    // Writing the hash fires `hashchange`, which is where the render happens, so
-    // typing a URL by hand and clicking a link both go down one path.
+    // Write explicit same-document history entries instead of assigning
+    // `location.hash`. Some embedded/browser launch paths coalesce hash-only
+    // assignments with the entry that opened the app, which makes Back leave Iris
+    // entirely. pushState guarantees every in-app `go` is a real history step.
     if (mode === 'replace') {
       window.history.replaceState(null, '', hash)
-      render(screen, params, detail ?? null)
     } else {
-      window.location.hash = hash
+      window.history.pushState(null, '', hash)
     }
+    render(screen, params, detail ?? null)
   }
 
   const nav: Nav = {
@@ -117,7 +119,9 @@ export function createRouter(root: HTMLElement, screens: Record<ScreenId, Screen
     current: () => current,
   }
 
-  window.addEventListener('hashchange', () => {
+  // Back and Forward traverse the entries created above. A URL typed or pasted
+  // into the address bar reloads the document and is restored by main.ts.
+  window.addEventListener('popstate', () => {
     const { screen, params, detail } = parseHash(window.location.hash, screens)
     render(screen, params, detail)
   })

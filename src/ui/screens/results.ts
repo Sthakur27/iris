@@ -16,6 +16,8 @@
 import { el } from '../router'
 import type { Screen } from '../router'
 import { loadSessions, loadSettings } from '../../core/settings'
+import { setPendingSession } from '../../core/sessionState'
+import type { SessionRequest } from '../../core/sessionState'
 import { RED_FLAG_SYMPTOMS, redFlagAdvice } from '../../core/safety'
 import type { RedFlagId } from '../../core/safety'
 import {
@@ -300,12 +302,44 @@ export const resultsScreen: Screen = (root, nav) => {
     home.addEventListener('click', () => nav.go('home'))
     const settingsButton = el('button', {}, 'Settings')
     settingsButton.addEventListener('click', () => nav.go('settings'))
+    const replay = latest && latest.results.length > 0
+      ? el('button', { class: 'primary big-start' }, '↻ Replay')
+      : null
+    replay?.addEventListener('click', replayLatest)
     return el(
       'div',
       { class: 'head' },
       el('h1', {}, 'Results'),
-      el('div', { class: 'actions' }, home, settingsButton),
+      el('div', { class: 'actions' }, ...(replay ? [replay] : []), home, settingsButton),
     )
+  }
+
+  /** Rebuild the last request and pass through the ordinary equipment/safety preview. */
+  function replayLatest(): void {
+    if (!latest || latest.results.length === 0) return
+    const lastResult = latest.results[latest.results.length - 1]
+    if (!lastResult) return
+
+    if (latest.results.length === 1) {
+      const durationMs = lastResult.plannedDurationMs ?? lastResult.durationMs
+      const minutes = Math.max(0.5, Math.round(durationMs / 30_000) / 2)
+      const request: SessionRequest = {
+        mode: 'single',
+        procedureId: lastResult.procedure,
+        minutes,
+      }
+      setPendingSession(request)
+      nav.go(
+        'home',
+        { view: 'prepare', exercise: lastResult.procedure, minutes: String(minutes) },
+        'self',
+      )
+      return
+    }
+
+    const request: SessionRequest = { mode: 'plan' }
+    setPendingSession(request)
+    nav.go('home', { view: 'prepare' }, 'plan')
   }
 
   function preamble(): HTMLElement {

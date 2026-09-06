@@ -20,6 +20,7 @@ import {
   DAILY_PROTOCOL,
   DEPTH_CINEMA,
   DEPTH_HELIX,
+  DEPTH_RINGS,
   DEPTH_SPIRAL,
   JUMP_DUCTIONS,
   jumpDuctionsUnlocked,
@@ -206,6 +207,7 @@ export const homeScreen: Screen = (root, nav) => {
     // Experimental, ungated, self-guided only — deliberately not in DAILY_PROTOCOL.
     list.push(CYCLOPEAN_LETTERS)
     list.push(DEPTH_CINEMA)
+    list.push(DEPTH_RINGS)
     list.push(DEPTH_SPIRAL)
     list.push(DEPTH_HELIX)
     return list
