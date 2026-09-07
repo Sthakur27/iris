@@ -1,6 +1,18 @@
 import { el } from './router'
 
 let nextPanelId = 0
+const CONTROLS_COLLAPSED_KEY = 'iris.procedureControls.collapsed.v1'
+
+function loadControlsCollapsed(fallback: boolean): boolean {
+  const stored = localStorage.getItem(CONTROLS_COLLAPSED_KEY)
+  if (stored === '1') return true
+  if (stored === '0') return false
+  return fallback
+}
+
+function saveControlsCollapsed(collapsed: boolean): void {
+  localStorage.setItem(CONTROLS_COLLAPSED_KEY, collapsed ? '1' : '0')
+}
 
 export interface ProcedureControlsOptions {
   /** Stable prefix used by aria-controls; a unique suffix is added automatically. */
@@ -17,6 +29,33 @@ export interface ProcedureControls {
   toggle: HTMLButtonElement
   isCollapsed(): boolean
   setCollapsed(collapsed: boolean): void
+  dispose(): void
+}
+
+export interface AutoRangeOptions {
+  input: HTMLInputElement
+  /** Compact text rendered beside the play/pause icon. */
+  label: string
+  /** Spoken/title text, for example "Y-axis rotation" or "ring spread sweep". */
+  description?: string
+  /** Units travelled per second. May be live, as with Helix's speed control. */
+  unitsPerSecond: number | (() => number)
+  /**
+   * Optional visible quantum. Motion accumulates until a full increment is due,
+   * preventing a range input from rounding tiny animation-frame deltas back away.
+   */
+  increment?: number
+  active?: boolean
+  className?: string
+  isPaused?: () => boolean
+  onChange(): void
+}
+
+export interface AutoRangeControl {
+  button: HTMLButtonElement
+  isActive(): boolean
+  setActive(active: boolean): void
+  setDirection(direction: 1 | -1): void
   dispose(): void
 }
 
@@ -62,9 +101,10 @@ export function createProcedureControls(
       })
   resizeObserver?.observe(node)
 
-  let collapsed = options.collapsed ?? true
+  let collapsed = loadControlsCollapsed(options.collapsed ?? true)
   const setCollapsed = (next: boolean): void => {
     collapsed = next
+    saveControlsCollapsed(collapsed)
     node.classList.toggle('is-collapsed', collapsed)
     options.prompt?.classList.toggle('controls-collapsed', collapsed)
     toggle.setAttribute('aria-expanded', String(!collapsed))
@@ -170,12 +210,116 @@ export function actionButton(shortcut: string | null, label: string): HTMLButton
   return button
 }
 
+/**
+ * Reusable play/pause controller for a numeric range that sweeps to each endpoint
+ * and reverses. It owns timing, quantised accumulation, button state, range
+ * synchronisation, pause handling, and cleanup; the exercise only owns meaning.
+ */
+export function createAutoRangeControl(options: AutoRangeOptions): AutoRangeControl {
+  const button = el('button', {
+    class: `cinema-action${options.className ? ` ${options.className}` : ''}`,
+    type: 'button',
+  })
+  const description = options.description ?? options.label
+  let active = options.active ?? false
+  let direction: 1 | -1 = 1
+  let remainder = 0
+  let previousMs = performance.now()
+
+  const paintButton = (): void => {
+    const action = active ? 'Pause' : 'Start'
+    button.textContent = `${active ? 'Ⅱ' : '▶'} ${options.label}`
+    button.setAttribute('aria-pressed', String(active))
+    button.setAttribute('aria-label', `${action} automatic ${description}`)
+    button.title = `${action} automatic ${description}`
+  }
+  const setActive = (next: boolean): void => {
+    active = next
+    remainder = 0
+    previousMs = performance.now()
+    paintButton()
+  }
+  const onButtonClick = (): void => setActive(!active)
+  const onManualInput = (): void => {
+    remainder = 0
+    options.onChange()
+  }
+  button.addEventListener('click', onButtonClick)
+  options.input.addEventListener('input', onManualInput)
+  paintButton()
+
+  const timer = window.setInterval(() => {
+    const now = performance.now()
+    const elapsedMs = Math.min(100, Math.max(0, now - previousMs))
+    previousMs = now
+    if (!active || options.isPaused?.() === true) return
+
+    const configuredRate = typeof options.unitsPerSecond === 'function'
+      ? options.unitsPerSecond()
+      : options.unitsPerSecond
+    const rate = Number.isFinite(configuredRate) ? Math.max(0, configuredRate) : 0
+    const movement = (elapsedMs / 1000) * rate
+    if (movement <= 0) return
+
+    const increment = options.increment
+    if (increment !== undefined && increment > 0) {
+      remainder += movement
+      let changed = false
+      while (remainder + Number.EPSILON >= increment) {
+        direction = advanceBouncingRange(options.input, direction, increment)
+        remainder -= increment
+        changed = true
+      }
+      if (changed) options.onChange()
+      return
+    }
+
+    direction = advanceBouncingRange(options.input, direction, movement)
+    options.onChange()
+  }, 50)
+
+  return {
+    button,
+    isActive: () => active,
+    setActive,
+    setDirection: (next) => {
+      direction = next
+      remainder = 0
+    },
+    dispose: () => {
+      window.clearInterval(timer)
+      button.removeEventListener('click', onButtonClick)
+      options.input.removeEventListener('input', onManualInput)
+    },
+  }
+}
+
 export function clampRange(input: HTMLInputElement, value: number): number {
   const min = Number(input.min)
   const max = Number(input.max)
   const next = Math.min(max, Math.max(min, value))
   input.value = String(next)
   return next
+}
+
+function advanceBouncingRange(
+  input: HTMLInputElement,
+  direction: 1 | -1,
+  amount: number,
+): 1 | -1 {
+  const min = Number(input.min)
+  const max = Number(input.max)
+  let next = Number(input.value) + direction * amount
+  let nextDirection = direction
+  if (next >= max) {
+    next = max - (next - max)
+    nextDirection = -1
+  } else if (next <= min) {
+    next = min + (min - next)
+    nextDirection = 1
+  }
+  input.value = String(Math.min(max, Math.max(min, next)))
+  return nextDirection
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {

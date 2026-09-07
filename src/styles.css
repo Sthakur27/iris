@@ -287,6 +287,7 @@ label {
   color: var(--text);
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .procedure-controls {
@@ -346,7 +347,11 @@ label {
   font-variant-numeric: tabular-nums;
 }
 
-.rings-controls .cinema-control {
+.procedure-controls.rings-controls {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.procedure-controls.rings-controls .cinema-control {
   grid-template-columns: 104px minmax(140px, 220px) 132px;
 }
 
@@ -423,6 +428,12 @@ label {
 
   .stage-prompt.controls-collapsed {
     bottom: 72px;
+  }
+}
+
+@media (max-width: 900px) and (min-width: 621px) {
+  .procedure-controls.rings-controls {
+    grid-template-columns: 1fr;
   }
 }
 

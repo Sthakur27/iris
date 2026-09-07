@@ -8,7 +8,11 @@ import {
 } from '../core/depthCinemaSafety'
 import { isTherapyPaused } from '../core/sessionState'
 import { el } from '../ui/router'
-import { createProcedureControls, rangeInput } from '../ui/procedureControls'
+import {
+  createAutoRangeControl,
+  createProcedureControls,
+  rangeInput,
+} from '../ui/procedureControls'
 
 const RED = '#ff0000'
 const BLUE = '#0000ff'
@@ -16,6 +20,7 @@ const RING_COUNT = 6
 const INITIAL_STACK_DEPTH_PD = 2
 const INITIAL_SPREAD_PD = 1.3
 const AUTO_SWEEP_PD_PER_SECOND = 0.1
+const AUTO_SWEEP_STEP_PD = 0.1
 
 /** A motionless, compact fusion target with several simultaneous depth planes. */
 export const depthRings: Procedure = {
@@ -49,20 +54,38 @@ export const depthRings: Procedure = {
     const spreadInput = rangeInput(0, 12, 0.1, INITIAL_SPREAD_PD, 'Depth spread between rings')
     const depthValue = el('span', { class: 'cinema-control-value' })
     const spreadValue = el('span', { class: 'cinema-control-value' })
-    const depthAutoButton = autoSweepButton('stack depth')
-    const spreadAutoButton = autoSweepButton('ring spread')
+    const depthAuto = createAutoRangeControl({
+      input: depthInput,
+      label: 'stack depth',
+      description: 'stack depth sweep',
+      unitsPerSecond: AUTO_SWEEP_PD_PER_SECOND,
+      increment: AUTO_SWEEP_STEP_PD,
+      className: 'rings-auto',
+      isPaused: isTherapyPaused,
+      onChange: () => update(),
+    })
+    const spreadAuto = createAutoRangeControl({
+      input: spreadInput,
+      label: 'ring spread',
+      description: 'ring spread sweep',
+      unitsPerSecond: AUTO_SWEEP_PD_PER_SECOND,
+      increment: AUTO_SWEEP_STEP_PD,
+      className: 'rings-auto',
+      isPaused: isTherapyPaused,
+      onChange: () => update(),
+    })
     const controls = createProcedureControls([
       el(
         'div',
         { class: 'cinema-control' },
-        depthAutoButton,
+        depthAuto.button,
         depthInput,
         depthValue,
       ),
       el(
         'div',
         { class: 'cinema-control' },
-        spreadAutoButton,
+        spreadAuto.button,
         spreadInput,
         spreadValue,
       ),
@@ -75,10 +98,6 @@ export const depthRings: Procedure = {
     let dpr = 1
     let stackDepthPd = INITIAL_STACK_DEPTH_PD
     let requestedSpreadPd = INITIAL_SPREAD_PD
-    let autoDepth = false
-    let autoSpread = false
-    let depthSweepDirection = 1
-    let spreadSweepDirection = 1
     const elapsed = createElapsedClock()
 
     const render = (): void => {
@@ -95,10 +114,16 @@ export const depthRings: Procedure = {
         settings.calibration.redEye,
       )
       depthValue.textContent = formatSignedDepth(stackDepthPd)
-      spreadValue.textContent =
-        actualSpreadPd === requestedSpreadPd
-          ? `${actualSpreadPd.toFixed(1)}Δ`
-          : `${actualSpreadPd.toFixed(1)}Δ at this depth`
+      // Keep the control readout anchored to what the slider requests. The HUD
+      // already reports the effective ring range when stack depth constrains it;
+      // replacing this number with the constrained value made the slider appear
+      // to change by itself and the explanatory suffix overflowed narrow panels.
+      spreadValue.textContent = `${requestedSpreadPd.toFixed(1)}Δ`
+      const spreadDescription = actualSpreadPd === requestedSpreadPd
+        ? `${requestedSpreadPd.toFixed(1)} prism dioptres`
+        : `${requestedSpreadPd.toFixed(1)} prism dioptres requested; limited to ${actualSpreadPd.toFixed(1)} at the current stack depth`
+      spreadInput.setAttribute('aria-valuetext', spreadDescription)
+      spreadValue.title = spreadDescription
       depthHud.textContent = formatSignedDepth(stackDepthPd)
       rangeHud.textContent = formatRange(stackDepthPd, actualSpreadPd)
       clockHud.textContent = elapsed.format()
@@ -139,39 +164,13 @@ export const depthRings: Procedure = {
       update()
     }
 
-    depthInput.addEventListener('input', update)
-    spreadInput.addEventListener('input', update)
-    depthAutoButton.addEventListener('click', () => {
-      autoDepth = !autoDepth
-      updateAutoSweepButton(depthAutoButton, 'stack depth', autoDepth)
-    })
-    spreadAutoButton.addEventListener('click', () => {
-      autoSpread = !autoSpread
-      updateAutoSweepButton(spreadAutoButton, 'ring spread', autoSpread)
-    })
     window.addEventListener('keydown', onKey)
     window.addEventListener('resize', resize)
     resize()
 
     let clockRaf = 0
-    let previousFrameMs: number | null = null
-    const tick = (frameMs: number): void => {
-      const rawDeltaMs = previousFrameMs === null ? 0 : Math.max(0, frameMs - previousFrameMs)
-      previousFrameMs = frameMs
-      const deltaPd = isTherapyPaused()
-        ? 0
-        : (Math.min(100, rawDeltaMs) / 1000) * AUTO_SWEEP_PD_PER_SECOND
-      let changed = false
-      if (autoDepth && deltaPd > 0) {
-        depthSweepDirection = advanceSweep(depthInput, depthSweepDirection, deltaPd)
-        changed = true
-      }
-      if (autoSpread && deltaPd > 0) {
-        spreadSweepDirection = advanceSweep(spreadInput, spreadSweepDirection, deltaPd)
-        changed = true
-      }
-      if (changed) update()
-      else clockHud.textContent = elapsed.format()
+    const tick = (): void => {
+      clockHud.textContent = elapsed.format()
       clockRaf = requestAnimationFrame(tick)
     }
     clockRaf = requestAnimationFrame(tick)
@@ -183,6 +182,8 @@ export const depthRings: Procedure = {
       })
     } finally {
       cancelAnimationFrame(clockRaf)
+      depthAuto.dispose()
+      spreadAuto.dispose()
       controls.dispose()
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', resize)
@@ -190,36 +191,6 @@ export const depthRings: Procedure = {
       stage.remove()
     }
   },
-}
-
-function autoSweepButton(label: string): HTMLButtonElement {
-  const button = el('button', { class: 'cinema-action rings-auto', type: 'button' })
-  updateAutoSweepButton(button, label, false)
-  return button
-}
-
-function updateAutoSweepButton(button: HTMLButtonElement, label: string, active: boolean): void {
-  button.textContent = `${active ? 'Ⅱ' : '▶'} ${label}`
-  button.setAttribute('aria-pressed', String(active))
-  button.setAttribute('aria-label', `${active ? 'Pause' : 'Start'} automatic ${label} sweep`)
-  button.title = `${active ? 'Pause' : 'Start'} automatic ${label} sweep`
-}
-
-/** Move a slider toward one endpoint, reflect there, and continue back. */
-function advanceSweep(input: HTMLInputElement, direction: number, delta: number): number {
-  const min = Number(input.min)
-  const max = Number(input.max)
-  let next = Number(input.value) + direction * delta
-  let nextDirection = direction
-  if (next >= max) {
-    next = max - (next - max)
-    nextDirection = -1
-  } else if (next <= min) {
-    next = min + (min - next)
-    nextDirection = 1
-  }
-  input.value = String(Math.min(max, Math.max(min, next)))
-  return nextDirection
 }
 
 function formatSignedDepth(depthPd: number): string {

@@ -8,6 +8,7 @@ import {
   actionButton,
   controlName,
   controlRow,
+  createAutoRangeControl,
   createProcedureControls,
   rangeInput,
 } from '../ui/procedureControls'
@@ -65,12 +66,6 @@ export const depthHelix: Procedure = {
     let traceSpeed = 0.75
     let traceDirection = 1
     let tracePaused = false
-    let autoRotateX = false
-    let autoRotateY = true
-    let autoRotateZ = false
-    let autoRotateXDirection = 1
-    let autoRotateYDirection = 1
-    let autoRotateZDirection = 1
     let axisRotationSpeed = 1
     // Fine internal steps let slow auto-rotation accumulate every frame. The
     // visible readouts remain rounded to whole degrees for legibility.
@@ -104,15 +99,40 @@ export const depthHelix: Procedure = {
     resetButton.classList.add('helix-reset')
     const tracePauseButton = actionButton(null, 'Pause trace')
     const traceReverseButton = actionButton(null, 'Reverse trace')
-    const rotationXButton = axisRotationButton('X')
-    const rotationYButton = axisRotationButton('Y', true)
-    const rotationZButton = axisRotationButton('Z')
+    const rotationXAuto = createAutoRangeControl({
+      input: rotationXInput,
+      label: 'X',
+      description: 'X-axis rotation',
+      unitsPerSecond: () => axisRotationSpeed,
+      className: 'helix-axis-motion',
+      isPaused: isTherapyPaused,
+      onChange: () => update(),
+    })
+    const rotationYAuto = createAutoRangeControl({
+      input: rotationYInput,
+      label: 'Y',
+      description: 'Y-axis rotation',
+      unitsPerSecond: () => axisRotationSpeed,
+      active: true,
+      className: 'helix-axis-motion',
+      isPaused: isTherapyPaused,
+      onChange: () => update(),
+    })
+    const rotationZAuto = createAutoRangeControl({
+      input: rotationZInput,
+      label: 'Z',
+      description: 'Z-axis rotation',
+      unitsPerSecond: () => axisRotationSpeed,
+      className: 'helix-axis-motion',
+      isPaused: isTherapyPaused,
+      onChange: () => update(),
+    })
     tracePauseButton.setAttribute('aria-pressed', 'false')
     traceReverseButton.setAttribute('aria-pressed', 'false')
     const controls = createProcedureControls([
-      el('div', { class: 'cinema-control' }, rotationXButton, rotationXInput, rotationXValue),
-      el('div', { class: 'cinema-control' }, rotationYButton, rotationYInput, rotationYValue),
-      el('div', { class: 'cinema-control' }, rotationZButton, rotationZInput, rotationZValue),
+      el('div', { class: 'cinema-control' }, rotationXAuto.button, rotationXInput, rotationXValue),
+      el('div', { class: 'cinema-control' }, rotationYAuto.button, rotationYInput, rotationYValue),
+      el('div', { class: 'cinema-control' }, rotationZAuto.button, rotationZInput, rotationZValue),
       controlRow(controlName('wheel', 'zoom'), zoomInput, zoomValue),
       controlRow(controlName('slider', 'stretch'), stretchInput, stretchValue),
       controlRow(controlName('−  +', 'depth'), depthInput, depthValue),
@@ -152,7 +172,11 @@ export const depthHelix: Procedure = {
       const traceState = tracePaused
         ? 'guided trace · paused'
         : `guided trace · ${traceDirection > 0 ? 'forward' : 'reverse'} · ${traceSpeed.toFixed(2)}×`
-      const rotatingAxes = [autoRotateX && 'X', autoRotateY && 'Y', autoRotateZ && 'Z'].filter(Boolean)
+      const rotatingAxes = [
+        rotationXAuto.isActive() && 'X',
+        rotationYAuto.isActive() && 'Y',
+        rotationZAuto.isActive() && 'Z',
+      ].filter(Boolean)
       stateHud.textContent = rotatingAxes.length > 0
         ? `${traceState} · rotating ${rotatingAxes.join('+')}`
         : traceState
@@ -216,19 +240,11 @@ export const depthHelix: Procedure = {
     const setRotation = (input: HTMLInputElement, value: number): void => {
       input.value = String(wrapDegrees(value))
     }
-    const updateAxisButtons = (): void => {
-      updateAxisRotationButton(rotationXButton, 'X', autoRotateX)
-      updateAxisRotationButton(rotationYButton, 'Y', autoRotateY)
-      updateAxisRotationButton(rotationZButton, 'Z', autoRotateZ)
-    }
     const resetView = (): void => {
-      autoRotateX = false
-      autoRotateY = false
-      autoRotateZ = false
-      autoRotateXDirection = 1
-      autoRotateYDirection = 1
-      autoRotateZDirection = 1
-      updateAxisButtons()
+      for (const auto of [rotationXAuto, rotationYAuto, rotationZAuto]) {
+        auto.setActive(false)
+        auto.setDirection(1)
+      }
       rotationXInput.value = '90'
       rotationYInput.value = '0'
       rotationZInput.value = '-45'
@@ -244,21 +260,6 @@ export const depthHelix: Procedure = {
     }
     rungsButton.addEventListener('click', toggleRungs)
     resetButton.addEventListener('click', resetView)
-    rotationXButton.addEventListener('click', () => {
-      autoRotateX = !autoRotateX
-      updateAxisButtons()
-      render()
-    })
-    rotationYButton.addEventListener('click', () => {
-      autoRotateY = !autoRotateY
-      updateAxisButtons()
-      render()
-    })
-    rotationZButton.addEventListener('click', () => {
-      autoRotateZ = !autoRotateZ
-      updateAxisButtons()
-      render()
-    })
     const updateTraceButtons = (): void => {
       tracePauseButton.setAttribute('aria-pressed', String(tracePaused))
       tracePauseButton.textContent = tracePaused ? 'Resume trace' : 'Pause trace'
@@ -317,45 +318,6 @@ export const depthHelix: Procedure = {
     window.addEventListener('resize', resize)
     resize()
 
-    // Keep axis automation independent from the guided trace's animation frame.
-    // This timer updates the actual range inputs, so an active axis always has a
-    // visible, inspectable sweep even if requestAnimationFrame is throttled by the
-    // browser or hosting surface.
-    let previousRotationMs = performance.now()
-    const rotationTimer = window.setInterval(() => {
-      const now = performance.now()
-      const deltaMs = Math.min(100, Math.max(0, now - previousRotationMs))
-      previousRotationMs = now
-      if (isTherapyPaused() || (!autoRotateX && !autoRotateY && !autoRotateZ)) return
-
-      const rotationStep = (deltaMs / 1000) * axisRotationSpeed
-      if (autoRotateX) {
-        autoRotateXDirection = advanceAxisRotation(
-          rotationXInput,
-          rotationX,
-          autoRotateXDirection,
-          rotationStep,
-        )
-      }
-      if (autoRotateY) {
-        autoRotateYDirection = advanceAxisRotation(
-          rotationYInput,
-          rotationY,
-          autoRotateYDirection,
-          rotationStep,
-        )
-      }
-      if (autoRotateZ) {
-        autoRotateZDirection = advanceAxisRotation(
-          rotationZInput,
-          rotationZ,
-          autoRotateZDirection,
-          rotationStep,
-        )
-      }
-      update()
-    }, 50)
-
     let clockRaf = 0
     let previousFrameMs: number | null = null
     const tick = (frameMs: number): void => {
@@ -391,7 +353,9 @@ export const depthHelix: Procedure = {
       })
     } finally {
       cancelAnimationFrame(clockRaf)
-      window.clearInterval(rotationTimer)
+      rotationXAuto.dispose()
+      rotationYAuto.dispose()
+      rotationZAuto.dispose()
       controls.dispose()
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', resize)
@@ -404,49 +368,6 @@ export const depthHelix: Procedure = {
       stage.remove()
     }
   },
-}
-
-function axisRotationButton(axis: 'X' | 'Y' | 'Z', active = false): HTMLButtonElement {
-  const button = el('button', { class: 'cinema-action helix-axis-motion', type: 'button' })
-  updateAxisRotationButton(button, axis, active)
-  return button
-}
-
-function updateAxisRotationButton(
-  button: HTMLButtonElement,
-  axis: 'X' | 'Y' | 'Z',
-  active: boolean,
-): void {
-  const action = active ? 'Pause' : 'Start'
-  button.textContent = `${active ? 'Ⅱ' : '▶'} ${axis}`
-  button.setAttribute('aria-pressed', String(active))
-  button.setAttribute('aria-label', `${action} automatic ${axis}-axis rotation`)
-  button.title = `${action} automatic ${axis}-axis rotation`
-}
-
-/**
- * Move one rotation slider toward an endpoint, then reflect and travel back.
- * Returning the direction separately keeps X/Y/Z sweeps fully independent.
- */
-function advanceAxisRotation(
-  input: HTMLInputElement,
-  current: number,
-  direction: number,
-  step: number,
-): number {
-  const min = Number(input.min)
-  const max = Number(input.max)
-  let next = current + direction * step
-  let nextDirection = direction
-  if (next >= max) {
-    next = max - (next - max)
-    nextDirection = -1
-  } else if (next <= min) {
-    next = min + (min - next)
-    nextDirection = 1
-  }
-  input.value = String(Math.min(max, Math.max(min, next)))
-  return nextDirection
 }
 
 export function drawHelix(
