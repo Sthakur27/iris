@@ -8,6 +8,13 @@ import {
   depthCinemaDivergenceLimit,
 } from '../core/depthCinemaSafety'
 import { el } from '../ui/router'
+import {
+  actionButton,
+  controlName,
+  controlRow,
+  createProcedureControls,
+  rangeInput,
+} from '../ui/procedureControls'
 
 /**
  * Depth Cinema — an experimental, passive animated vergence exercise.
@@ -106,86 +113,31 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
     'Keep the arrows single and clear; click to gently gather them. Stop immediately for doubling, pain, headache, nausea, or dizziness. Look far away; if double vision remains, get an eye exam before continuing.',
   )
 
-  const speedInput = el('input', {
-    type: 'range',
-    min: '0.05',
-    max: '1.5',
-    step: '0.01',
-    value: '0.5',
-  })
-  speedInput.setAttribute('aria-label', 'Movie speed')
+  const speedInput = rangeInput(0.05, 1.5, 0.01, 0.5, 'Movie speed')
   const speedValue = el('span', { class: 'cinema-control-value' }, '0.50×')
-  const depthInput = el('input', {
-    type: 'range',
-    min: '0',
-    max: String(targetPeakPd),
-    step: '0.1',
-    value: '0',
-  })
-  depthInput.setAttribute('aria-label', 'Current automatic depth')
+  const depthInput = rangeInput(0, targetPeakPd, 0.1, 0, 'Current automatic depth')
   const depthValue = el('span', { class: 'cinema-control-value' }, '0.0Δ')
-  const arrowsInput = el('input', {
-    type: 'range',
-    min: '0',
-    max: '4',
-    step: '1',
-    value: String(config.movingArrowCount),
-  })
-  arrowsInput.setAttribute('aria-label', 'Moving arrows')
+  const arrowsInput = rangeInput(0, 4, 1, config.movingArrowCount, 'Moving arrows')
   const arrowsValue = el('span', { class: 'cinema-control-value' }, String(config.movingArrowCount))
-  const depthRangeInput = el('input', {
-    type: 'range',
-    min: '0',
-    max: '15',
-    step: '0.1',
-    value: '2.5',
-  })
-  depthRangeInput.setAttribute('aria-label', 'Scene depth range in inches')
+  const depthRangeInput = rangeInput(0, 15, 0.1, 2.5, 'Scene depth range in inches')
   depthRangeInput.setAttribute('aria-valuetext', '2.5 inches')
   const depthRangeValue = el('span', { class: 'cinema-control-value' }, '2.5 in')
-  const speedName = cinemaControlName('[  ]', 'speed')
-  const depthName = cinemaControlName('−  +', 'current depth')
-  const arrowsName = cinemaControlName(',  .', 'arrows')
-  const depthRangeName = cinemaControlName(';  ’', 'depth range')
-  const motionLabel = el('span', { class: 'cinema-action-label' }, 'Pause motion')
-  const depthLabel = el('span', { class: 'cinema-action-label' }, 'Hold depth')
-  const reverseLabel = el('span', { class: 'cinema-action-label' }, 'Reverse depth')
-  const fullscreenLabel = el('span', { class: 'cinema-action-label' }, 'Fullscreen')
-  const motionButton = cinemaAction('M', motionLabel)
-  const depthButton = cinemaAction('H', depthLabel)
-  const reverseButton = cinemaAction('R', reverseLabel)
-  const fullscreenButton = cinemaAction('F', fullscreenLabel)
-  const movieControls = el(
-    'div',
-    { class: 'cinema-controls' },
-    el(
-      'label',
-      { class: 'cinema-control' },
-      speedName,
-      speedInput,
-      speedValue,
-    ),
-    el(
-      'label',
-      { class: 'cinema-control' },
-      depthName,
-      depthInput,
-      depthValue,
-    ),
-    el(
-      'label',
-      { class: 'cinema-control' },
-      arrowsName,
-      arrowsInput,
-      arrowsValue,
-    ),
-    el(
-      'label',
-      { class: 'cinema-control' },
-      depthRangeName,
-      depthRangeInput,
-      depthRangeValue,
-    ),
+  const motionButton = actionButton('M', 'Pause motion')
+  const depthButton = actionButton('H', 'Hold depth')
+  const reverseButton = actionButton('R', 'Reverse depth')
+  const fullscreenButton = actionButton('F', 'Fullscreen')
+  motionButton.title = 'Shortcut: M'
+  depthButton.title = 'Shortcut: H'
+  reverseButton.title = 'Shortcut: R'
+  fullscreenButton.title = 'Shortcut: F'
+  const motionLabel = motionButton.querySelector<HTMLSpanElement>('.cinema-action-label')!
+  const depthLabel = depthButton.querySelector<HTMLSpanElement>('.cinema-action-label')!
+  const reverseLabel = reverseButton.querySelector<HTMLSpanElement>('.cinema-action-label')!
+  const movieControls = createProcedureControls([
+    controlRow(controlName('[  ]', 'speed'), speedInput, speedValue),
+    controlRow(controlName('−  +', 'current depth'), depthInput, depthValue),
+    controlRow(controlName(',  .', 'arrows'), arrowsInput, arrowsValue),
+    controlRow(controlName(';  ’', 'depth range'), depthRangeInput, depthRangeValue),
     el(
       'div',
       { class: 'cinema-actions' },
@@ -194,9 +146,9 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
       reverseButton,
       fullscreenButton,
     ),
-  )
+  ], { id: 'depth-cinema', prompt, collapsed: true })
 
-  stage.append(frame, hud, prompt, movieControls)
+  stage.append(frame, hud, prompt, movieControls.node)
   ctx.root.append(stage)
 
   const elapsed = createElapsedClock()
@@ -416,29 +368,12 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
     })
   } finally {
     cancelAnimationFrame(raf)
+    movieControls.dispose()
     window.removeEventListener('keydown', onKey)
     window.removeEventListener('resize', resize)
     elapsed.dispose()
     stage.remove()
   }
-}
-
-function cinemaControlName(shortcut: string, label: string): HTMLElement {
-  return el(
-    'span',
-    { class: 'cinema-control-name' },
-    el('kbd', { class: 'cinema-shortcut' }, shortcut),
-    el('span', {}, label),
-  )
-}
-
-function cinemaAction(shortcut: string, label: HTMLElement): HTMLButtonElement {
-  return el(
-    'button',
-    { class: 'cinema-action', type: 'button', title: `Shortcut: ${shortcut}` },
-    el('kbd', { class: 'cinema-shortcut' }, shortcut),
-    label,
-  )
 }
 
 function smoothStep(t: number): number {

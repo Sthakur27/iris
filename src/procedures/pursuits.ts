@@ -5,6 +5,13 @@ import { FatigueMonitor, createElapsedClock, visibleTimeout } from './base'
 import { CATCH_TRIAL_RATE, IntegrityMonitor, MIN_PLAUSIBLE_LATENCY_MS } from '../core/integrity'
 import { drawLandoltC } from '../core/anaglyph'
 import { el } from '../ui/router'
+import {
+  actionButton,
+  controlName,
+  controlRow,
+  createProcedureControls,
+  rangeInput,
+} from '../ui/procedureControls'
 
 /**
  * Pursuits — smooth-pursuit tracking.
@@ -302,9 +309,54 @@ async function runPursuits(ctx: ProcedureContext): Promise<void> {
   let path = layoutPath(viewport().w, viewport().h)
   let targetSize = targetSizeFor(viewport().w, viewport().h)
   let speedIndex = 1
+  let pendingSpeedIndex: number | null = null
+  let autoSpeed = true
   const stimulus: Stimulus = { direction: null, isCatch: false, catchRotation: 0 }
   const recorded: PursuitTrial[] = []
   let position = { x: path.cx, y: path.cy }
+
+  const speedSlider = rangeInput(
+    0,
+    SPEED_SCALES.length - 1,
+    1,
+    speedIndex,
+    'Path speed',
+  )
+  const speedValue = el(
+    'span',
+    { class: 'cinema-control-value' },
+    `${(SPEED_SCALES[speedIndex] ?? 1).toFixed(2)}×`,
+  )
+  const autoSpeedButton = actionButton(null, 'Auto speed')
+  const paintSpeedControls = (): void => {
+    const shownIndex = pendingSpeedIndex ?? speedIndex
+    speedSlider.value = String(shownIndex)
+    speedValue.textContent = `${(SPEED_SCALES[shownIndex] ?? 1).toFixed(2)}×`
+    autoSpeedButton.setAttribute('aria-pressed', String(autoSpeed))
+  }
+  autoSpeedButton.addEventListener('click', () => {
+    autoSpeed = !autoSpeed
+    pendingSpeedIndex = null
+    paintSpeedControls()
+    autoSpeedButton.blur()
+  })
+  speedSlider.addEventListener('input', () => {
+    pendingSpeedIndex = Math.max(
+      0,
+      Math.min(SPEED_SCALES.length - 1, Math.round(Number(speedSlider.value))),
+    )
+    autoSpeed = false
+    paintSpeedControls()
+  })
+  const controls = createProcedureControls(
+    [
+      controlRow(controlName('←  →', 'path speed'), speedSlider, speedValue),
+      autoSpeedButton,
+    ],
+    { id: pursuits.id, prompt },
+  )
+  stage.append(controls.node)
+  paintSpeedControls()
 
   /**
    * Phase reference for the animated path. This one is a raw wall clock on purpose:
@@ -434,6 +486,15 @@ async function runPursuits(ctx: ProcedureContext): Promise<void> {
 
   try {
     while (!signal.aborted) {
+      // Manual changes are staged by the controls and committed only between epochs,
+      // so the speed recorded for a response is the speed that was actually shown.
+      if (pendingSpeedIndex !== null) {
+        speedIndex = pendingSpeedIndex
+        pendingSpeedIndex = null
+        paintSpeedControls()
+        paintHud()
+      }
+
       // --- Build the stimulus --------------------------------------------
       // A catch epoch's gap is below resolution however well the target is tracked,
       // so an arrow key here is a false alarm rather than a tracking failure.
@@ -507,13 +568,16 @@ async function runPursuits(ctx: ProcedureContext): Promise<void> {
       // --- Adaptive speed --------------------------------------------------
       // Driven by the integrity monitor rather than raw accuracy: at four
       // alternatives, accuracy alone cannot separate tracking from guessing.
-      const recommendation = monitor.recommendation()
-      if (response.kind === 'cannotSee' && !isCatch) {
-        speedIndex = Math.max(0, speedIndex - 1)
-      } else if (recommendation === 'increase' && !monitor.verdict().atChance) {
-        speedIndex = Math.min(SPEED_SCALES.length - 1, speedIndex + 1)
-      } else if (recommendation === 'decrease') {
-        speedIndex = Math.max(0, speedIndex - 1)
+      if (autoSpeed) {
+        const recommendation = monitor.recommendation()
+        if (response.kind === 'cannotSee' && !isCatch) {
+          speedIndex = Math.max(0, speedIndex - 1)
+        } else if (recommendation === 'increase' && !monitor.verdict().atChance) {
+          speedIndex = Math.min(SPEED_SCALES.length - 1, speedIndex + 1)
+        } else if (recommendation === 'decrease') {
+          speedIndex = Math.max(0, speedIndex - 1)
+        }
+        paintSpeedControls()
       }
 
       // Close the ring and wait a random beat, so the next onset cannot be timed.
@@ -541,6 +605,7 @@ async function runPursuits(ctx: ProcedureContext): Promise<void> {
     elapsed.dispose()
     window.removeEventListener('resize', onResize)
     feedback.close()
+    controls.dispose()
     stage.remove()
   }
 
@@ -557,6 +622,7 @@ async function runPursuits(ctx: ProcedureContext): Promise<void> {
     if (g) g.clearRect(0, 0, canvas.width, canvas.height)
     hudSpeed.textContent = ''
     hudWarning.textContent = ''
+    controls.node.style.display = 'none'
 
     const attempted = recorded.filter((t) => !t.isCatch && t.kind === 'answer')
     const byScale = new Map<number, { valid: number; correct: number }>()

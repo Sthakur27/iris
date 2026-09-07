@@ -8,6 +8,7 @@ import {
 } from '../core/depthCinemaSafety'
 import { isTherapyPaused } from '../core/sessionState'
 import { el } from '../ui/router'
+import { createProcedureControls, rangeInput } from '../ui/procedureControls'
 
 const RED = '#ff0000'
 const BLUE = '#0000ff'
@@ -38,21 +39,19 @@ export const depthRings: Procedure = {
       'Keep all six rings single. Set either slider by hand, or start its slow automatic sweep and let it reverse at each end.',
     )
 
-    const depthInput = slider(
-      String(-divergenceLimit),
-      String(DEPTH_CINEMA_MAX_CONVERGENCE_PD),
-      '0.1',
-      String(INITIAL_STACK_DEPTH_PD),
+    const depthInput = rangeInput(
+      -divergenceLimit,
+      DEPTH_CINEMA_MAX_CONVERGENCE_PD,
+      0.1,
+      INITIAL_STACK_DEPTH_PD,
       'Whole stack depth; divergence to the left and convergence to the right',
     )
-    const spreadInput = slider('0', '12', '0.1', String(INITIAL_SPREAD_PD), 'Depth spread between rings')
+    const spreadInput = rangeInput(0, 12, 0.1, INITIAL_SPREAD_PD, 'Depth spread between rings')
     const depthValue = el('span', { class: 'cinema-control-value' })
     const spreadValue = el('span', { class: 'cinema-control-value' })
     const depthAutoButton = autoSweepButton('stack depth')
     const spreadAutoButton = autoSweepButton('ring spread')
-    const controls = el(
-      'div',
-      { class: 'cinema-controls rings-controls' },
+    const controls = createProcedureControls([
       el(
         'div',
         { class: 'cinema-control' },
@@ -67,8 +66,8 @@ export const depthRings: Procedure = {
         spreadInput,
         spreadValue,
       ),
-    )
-    stage.append(canvas, hud, prompt, controls)
+    ], { id: 'depth-rings', prompt, collapsed: true, className: 'rings-controls' })
+    stage.append(canvas, hud, prompt, controls.node)
     ctx.root.append(stage)
 
     let width = 0
@@ -184,18 +183,13 @@ export const depthRings: Procedure = {
       })
     } finally {
       cancelAnimationFrame(clockRaf)
+      controls.dispose()
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', resize)
       elapsed.dispose()
       stage.remove()
     }
   },
-}
-
-function slider(min: string, max: string, step: string, value: string, label: string): HTMLInputElement {
-  const input = el('input', { type: 'range', min, max, step, value })
-  input.setAttribute('aria-label', label)
-  return input
 }
 
 function autoSweepButton(label: string): HTMLButtonElement {

@@ -289,7 +289,7 @@ label {
   font-variant-numeric: tabular-nums;
 }
 
-.helix-controls {
+.procedure-controls {
   width: min(940px, calc(100% - 32px));
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -301,7 +301,7 @@ label {
   backdrop-filter: blur(8px);
 }
 
-.helix-controls-toggle {
+.procedure-controls-toggle {
   position: absolute;
   top: -40px;
   right: 0;
@@ -310,7 +310,7 @@ label {
   white-space: nowrap;
 }
 
-.helix-controls.is-collapsed {
+.procedure-controls.is-collapsed {
   width: auto;
   display: block;
   padding: 0;
@@ -319,20 +319,20 @@ label {
   backdrop-filter: none;
 }
 
-.helix-controls.is-collapsed > :not(.helix-controls-toggle) {
+.procedure-controls.is-collapsed > :not(.procedure-controls-toggle) {
   display: none;
 }
 
-.helix-controls.is-collapsed .helix-controls-toggle {
+.procedure-controls.is-collapsed .procedure-controls-toggle {
   position: static;
 }
 
-.helix-controls .cinema-control {
+.procedure-controls .cinema-control {
   width: 100%;
   grid-template-columns: 54px minmax(70px, 1fr) 46px;
 }
 
-.helix-controls .cinema-control input[type='range'] {
+.procedure-controls .cinema-control input[type='range'] {
   width: 100%;
 }
 
@@ -377,7 +377,16 @@ label {
   bottom: 280px;
 }
 
-.helix-prompt.controls-collapsed {
+.stage-prompt.controls-collapsed {
+  bottom: 72px;
+}
+
+.stage-prompt.procedure-controls-prompt {
+  bottom: calc(var(--procedure-controls-height, 220px) + 34px);
+  transition: bottom 160ms ease;
+}
+
+.stage-prompt.procedure-controls-prompt.controls-collapsed {
   bottom: 72px;
 }
 
@@ -393,18 +402,18 @@ label {
 }
 
 @media (max-width: 1040px) and (min-width: 621px) {
-  .helix-controls {
+  .procedure-controls {
     width: min(720px, calc(100% - 32px));
     grid-template-columns: 1fr 1fr;
     gap: 10px 24px;
   }
 
-  .helix-controls .cinema-control,
+  .procedure-controls .cinema-control,
   .helix-direction {
     width: 100%;
   }
 
-  .helix-controls .cinema-control input[type='range'] {
+  .procedure-controls .cinema-control input[type='range'] {
     width: 100%;
   }
 
@@ -412,7 +421,7 @@ label {
     bottom: 390px;
   }
 
-  .helix-prompt.controls-collapsed {
+  .stage-prompt.controls-collapsed {
     bottom: 72px;
   }
 }
@@ -451,7 +460,7 @@ label {
     grid-template-columns: 42px 1fr;
   }
 
-  .helix-controls {
+  .procedure-controls {
     display: grid;
     grid-template-columns: 1fr;
     max-height: 218px;
@@ -460,7 +469,7 @@ label {
     background: rgba(3, 7, 18, 0.9);
   }
 
-  .helix-controls:not(.is-collapsed) .helix-controls-toggle {
+  .procedure-controls:not(.is-collapsed) .procedure-controls-toggle {
     position: sticky;
     top: 0;
     grid-column: 1;
@@ -471,7 +480,7 @@ label {
     bottom: 250px;
   }
 
-  .helix-prompt.controls-collapsed {
+  .stage-prompt.controls-collapsed {
     bottom: 72px;
   }
 }

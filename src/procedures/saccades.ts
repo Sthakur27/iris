@@ -5,6 +5,13 @@ import { FatigueMonitor, createElapsedClock, visibleTimeout } from './base'
 import { CATCH_TRIAL_RATE, IntegrityMonitor, MIN_PLAUSIBLE_LATENCY_MS } from '../core/integrity'
 import { drawLandoltC } from '../core/anaglyph'
 import { el } from '../ui/router'
+import {
+  actionButton,
+  controlName,
+  controlRow,
+  createProcedureControls,
+  rangeInput,
+} from '../ui/procedureControls'
 
 /**
  * Saccades — fixation shifts between targets.
@@ -294,6 +301,8 @@ async function runSaccades(ctx: ProcedureContext): Promise<void> {
 
   // --- State ---------------------------------------------------------------
   let sizeIndex = 1
+  let pendingSizeIndex: number | null = null
+  let autoSize = true
   let previous: Point = { x: viewport().w / 2, y: viewport().h / 2 }
   const target: { at: Point; direction: Direction | null; isCatch: boolean; rotation: number } = {
     at: { ...previous },
@@ -303,6 +312,44 @@ async function runSaccades(ctx: ProcedureContext): Promise<void> {
   }
   const recorded: SaccadeTrial[] = []
 
+  const sizeSlider = rangeInput(
+    0,
+    SIZE_FRACTIONS.length - 1,
+    1,
+    sizeIndex,
+    'Target size',
+  )
+  const sizeValue = el('span', { class: 'cinema-control-value' })
+  const autoSizeButton = actionButton(null, 'Auto size')
+  const paintSizeControls = (): void => {
+    const shownIndex = pendingSizeIndex ?? sizeIndex
+    sizeSlider.value = String(shownIndex)
+    sizeValue.textContent = `${targetSizeAt(shownIndex)} px`
+    autoSizeButton.setAttribute('aria-pressed', String(autoSize))
+  }
+  autoSizeButton.addEventListener('click', () => {
+    autoSize = !autoSize
+    pendingSizeIndex = null
+    paintSizeControls()
+    autoSizeButton.blur()
+  })
+  sizeSlider.addEventListener('input', () => {
+    pendingSizeIndex = Math.max(
+      0,
+      Math.min(SIZE_FRACTIONS.length - 1, Math.round(Number(sizeSlider.value))),
+    )
+    autoSize = false
+    paintSizeControls()
+  })
+  const controls = createProcedureControls(
+    [
+      controlRow(controlName('←  →', 'target size'), sizeSlider, sizeValue),
+      autoSizeButton,
+    ],
+    { id: saccades.id, prompt },
+  )
+  stage.append(controls.node)
+
   /** Therapy actually done: stops for hidden tabs and for pauses, like the session clock. */
   const elapsed = createElapsedClock()
 
@@ -311,7 +358,10 @@ async function runSaccades(ctx: ProcedureContext): Promise<void> {
     canvas.width = w
     canvas.height = h
   }
-  const onResize = (): void => sizeCanvas()
+  const onResize = (): void => {
+    sizeCanvas()
+    paintSizeControls()
+  }
   window.addEventListener('resize', onResize)
   sizeCanvas()
 
@@ -320,10 +370,16 @@ async function runSaccades(ctx: ProcedureContext): Promise<void> {
     return Math.min(w, h)
   }
 
-  function targetSize(): number {
-    const fraction = SIZE_FRACTIONS[sizeIndex] ?? 0.04
+  function targetSizeAt(index: number): number {
+    const fraction = SIZE_FRACTIONS[index] ?? 0.04
     return Math.max(14, Math.round(shortEdge() * fraction))
   }
+
+  function targetSize(): number {
+    return targetSizeAt(sizeIndex)
+  }
+
+  paintSizeControls()
 
   // --- Render loop ---------------------------------------------------------
   // Draws whatever the trial loop below has set, so the trial loop can stay a plain
@@ -387,6 +443,15 @@ async function runSaccades(ctx: ProcedureContext): Promise<void> {
       target.isCatch = false
       await sleep(GAP_MIN_MS + Math.random() * GAP_JITTER_MS, signal)
       if (signal.aborted) break
+
+      // Commit a manual size only while the target is blank. Placement, rendering,
+      // and the recorded targetSizePx then all use the same value for this trial.
+      if (pendingSizeIndex !== null) {
+        sizeIndex = pendingSizeIndex
+        pendingSizeIndex = null
+        paintSizeControls()
+        paintHud()
+      }
 
       // --- Place the next target -------------------------------------------
       const size = targetSize()
@@ -472,14 +537,17 @@ async function runSaccades(ctx: ProcedureContext): Promise<void> {
       // --- Adaptive size ------------------------------------------------------
       // Driven by the integrity monitor rather than raw accuracy: at four
       // alternatives, accuracy alone cannot separate reading from guessing.
-      const recommendation = monitor.recommendation()
-      if (response.kind === 'cannotSee' && !isCatch) {
-        sizeIndex = Math.max(0, sizeIndex - 1)
-      } else if (recommendation === 'increase' && !monitor.verdict().atChance) {
-        sizeIndex = Math.min(SIZE_FRACTIONS.length - 1, sizeIndex + 1)
-      } else if (recommendation === 'decrease') {
-        sizeIndex = Math.max(0, sizeIndex - 1)
+      if (autoSize) {
+        const recommendation = monitor.recommendation()
+        if (response.kind === 'cannotSee' && !isCatch) {
+          sizeIndex = Math.max(0, sizeIndex - 1)
+        } else if (recommendation === 'increase' && !monitor.verdict().atChance) {
+          sizeIndex = Math.min(SIZE_FRACTIONS.length - 1, sizeIndex + 1)
+        } else if (recommendation === 'decrease') {
+          sizeIndex = Math.max(0, sizeIndex - 1)
+        }
       }
+      paintSizeControls()
       paintHud()
 
       // --- Fatigue -------------------------------------------------------------
@@ -504,6 +572,7 @@ async function runSaccades(ctx: ProcedureContext): Promise<void> {
     elapsed.dispose()
     window.removeEventListener('resize', onResize)
     feedback.close()
+    controls.dispose()
     stage.remove()
   }
 
@@ -550,6 +619,7 @@ async function runSaccades(ctx: ProcedureContext): Promise<void> {
     if (g) g.clearRect(0, 0, canvas.width, canvas.height)
     hudSize.textContent = ''
     hudWarning.textContent = ''
+    controls.node.style.display = 'none'
 
     const attempted = recorded.filter((t) => !t.isCatch && t.kind === 'answer')
     const correct = attempted.filter((t) => t.correct)

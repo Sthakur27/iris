@@ -6,6 +6,11 @@ import { CATCH_TRIAL_RATE, IntegrityMonitor, MIN_PLAUSIBLE_LATENCY_MS } from '..
 import { drawLandoltC } from '../core/anaglyph'
 import { createStagePlacement, loadStoredScale, saveStoredScale } from './stagePlacement'
 import { el } from '../ui/router'
+import {
+  controlName,
+  controlRow,
+  createProcedureControls,
+} from '../ui/procedureControls'
 
 /**
  * Accommodative Rock — HTS's monocular accommodative facility drill, rebuilt.
@@ -332,17 +337,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
     value: String(sizeScale),
   })
   sizeSlider.style.cssText = 'width:140px;accent-color:#8b97a6'
-  const sizeLabel = el('label')
-  sizeLabel.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer'
-  sizeLabel.append('size', sizeSlider)
-  // The row also hosts the auto-relocation toggle, appended once it exists below.
-  const sizeWrap = el('div')
-  sizeWrap.style.cssText =
-    'position:fixed;left:18px;bottom:16px;display:flex;align-items:center;gap:14px;' +
-    'font-size:12px;color:#6d7886;z-index:1'
-  sizeWrap.append(sizeLabel)
-
-  stage.append(canvasWrap, flipCue, hud, prompt, sizeWrap)
+  stage.append(canvasWrap, flipCue, hud, prompt)
   ctx.root.append(stage)
 
   const feedback = new Feedback()
@@ -370,7 +365,21 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
     // A jitter change means a new row layout, and the repaint path is onResize.
     onChange: () => onResize(),
   })
-  sizeWrap.append(placement.autoToggle)
+  const sizeValue = el('span', { class: 'cinema-control-value' }, `${sizeScale.toFixed(2)}×`)
+  const controls = createProcedureControls(
+    [
+      controlRow(controlName('←  →', 'target size'), sizeSlider, sizeValue),
+      el(
+        'div',
+        { class: 'cinema-control' },
+        controlName(null, 'relocation'),
+        placement.autoToggle,
+        el('span', { class: 'cinema-control-value' }),
+      ),
+    ],
+    { id: accommodativeRock.id, prompt },
+  )
+  stage.append(controls.node)
 
   /** The slider's scale, wobbled by auto mode, still bounded by the slider's range. */
   const effectiveScale = (): number =>
@@ -386,6 +395,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
 
   sizeSlider.addEventListener('input', () => {
     sizeScale = Number(sizeSlider.value) || 1
+    sizeValue.textContent = `${sizeScale.toFixed(2)}×`
     saveStoredScale(SIZE_SCALE_KEY, sizeScale)
     onResize()
   })
@@ -571,6 +581,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
     window.removeEventListener('resize', onResize)
     sparkles.dispose()
     feedback.close()
+    controls.dispose()
     stage.remove()
   }
 
@@ -608,6 +619,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
     }
 
     canvasWrap.style.opacity = '0'
+    controls.node.style.display = 'none'
     flipCue.style.display = 'flex'
     flipWord.style.color = colour === 'red' ? RED : BLUE
     flipWord.textContent = 'READY'
@@ -620,6 +632,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
     await sleep(FLIP_CUE_MS, signal)
 
     flipCue.style.display = 'none'
+    controls.node.style.display = ''
     canvasWrap.style.opacity = '1'
     setPrompt()
   }
@@ -635,7 +648,7 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
     const verdict = monitor.verdict()
     painted = null
     canvasWrap.style.display = 'none'
-    sizeWrap.style.display = 'none'
+    controls.node.style.display = 'none'
     flipCue.style.display = 'none'
 
     const minutes = elapsed.ms() / 60_000

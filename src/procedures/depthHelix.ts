@@ -4,6 +4,13 @@ import { createElapsedClock } from './base'
 import { prismDioptresToPx } from '../core/geometry'
 import { isTherapyPaused } from '../core/sessionState'
 import { el } from '../ui/router'
+import {
+  actionButton,
+  controlName,
+  controlRow,
+  createProcedureControls,
+  rangeInput,
+} from '../ui/procedureControls'
 
 const RED = '#ff0000'
 const BLUE = '#0000ff'
@@ -67,14 +74,14 @@ export const depthHelix: Procedure = {
     let axisRotationSpeed = 1
     // Fine internal steps let slow auto-rotation accumulate every frame. The
     // visible readouts remain rounded to whole degrees for legibility.
-    const rotationXInput = slider('-180', '180', '0.001', String(rotationX), 'X-axis rotation')
-    const rotationYInput = slider('-180', '180', '0.001', String(rotationY), 'Y-axis rotation')
-    const rotationZInput = slider('-180', '180', '0.001', String(rotationZ), 'Z-axis rotation')
-    const zoomInput = slider('50', '180', '1', String(zoom), 'Helix zoom')
-    const stretchInput = slider('50', '200', '1', String(stretch), 'Helix stretch')
-    const depthInput = slider('0', '20', '0.5', String(depth), 'Fixed depth')
-    const traceSpeedInput = slider('0.25', '2', '0.05', String(traceSpeed), 'Trace speed')
-    const axisRotationSpeedInput = slider('0.25', '2', '0.25', String(axisRotationSpeed), 'Axis rotation speed')
+    const rotationXInput = rangeInput(-180, 180, 0.001, rotationX, 'X-axis rotation')
+    const rotationYInput = rangeInput(-180, 180, 0.001, rotationY, 'Y-axis rotation')
+    const rotationZInput = rangeInput(-180, 180, 0.001, rotationZ, 'Z-axis rotation')
+    const zoomInput = rangeInput(50, 180, 1, zoom, 'Helix zoom')
+    const stretchInput = rangeInput(50, 200, 1, stretch, 'Helix stretch')
+    const depthInput = rangeInput(0, 20, 0.5, depth, 'Fixed depth')
+    const traceSpeedInput = rangeInput(0.25, 2, 0.05, traceSpeed, 'Trace speed')
+    const axisRotationSpeedInput = rangeInput(0.25, 2, 0.25, axisRotationSpeed, 'Axis rotation speed')
     const directionInput = el('select')
     directionInput.setAttribute('aria-label', 'Depth direction')
     directionInput.append(
@@ -90,43 +97,34 @@ export const depthHelix: Procedure = {
     const depthValue = el('span', { class: 'cinema-control-value' }, `${depth.toFixed(1)}Δ`)
     const traceSpeedValue = el('span', { class: 'cinema-control-value' }, `${traceSpeed.toFixed(2)}×`)
     const axisRotationSpeedValue = el('span', { class: 'cinema-control-value' }, `${axisRotationSpeed.toFixed(2)}°/s`)
-    const rungsButton = el('button', { class: 'cinema-action helix-toggle', type: 'button' }, 'Cross-lines on')
+    const rungsButton = actionButton(null, 'Cross-lines on')
+    rungsButton.classList.add('helix-toggle')
     rungsButton.setAttribute('aria-pressed', 'true')
-    const resetButton = el('button', { class: 'cinema-action helix-reset', type: 'button' }, 'Reset view')
-    const tracePauseButton = el('button', { class: 'cinema-action', type: 'button' }, 'Pause trace')
-    const traceReverseButton = el('button', { class: 'cinema-action', type: 'button' }, 'Reverse trace')
-    const controlsToggle = el(
-      'button',
-      { class: 'cinema-action helix-controls-toggle', type: 'button' },
-      'Show controls ↑',
-    )
+    const resetButton = actionButton(null, 'Reset view')
+    resetButton.classList.add('helix-reset')
+    const tracePauseButton = actionButton(null, 'Pause trace')
+    const traceReverseButton = actionButton(null, 'Reverse trace')
     const rotationXButton = axisRotationButton('X')
     const rotationYButton = axisRotationButton('Y', true)
     const rotationZButton = axisRotationButton('Z')
     tracePauseButton.setAttribute('aria-pressed', 'false')
     traceReverseButton.setAttribute('aria-pressed', 'false')
-    const controls = el(
-      'div',
-      { class: 'cinema-controls helix-controls is-collapsed', id: 'helix-controls' },
-      controlsToggle,
+    const controls = createProcedureControls([
       el('div', { class: 'cinema-control' }, rotationXButton, rotationXInput, rotationXValue),
       el('div', { class: 'cinema-control' }, rotationYButton, rotationYInput, rotationYValue),
       el('div', { class: 'cinema-control' }, rotationZButton, rotationZInput, rotationZValue),
-      el('label', { class: 'cinema-control' }, controlName('wheel', 'zoom'), zoomInput, zoomValue),
-      el('label', { class: 'cinema-control' }, controlName('slider', 'stretch'), stretchInput, stretchValue),
-      el('label', { class: 'cinema-control' }, controlName('−  +', 'depth'), depthInput, depthValue),
-      el('label', { class: 'cinema-control' }, controlName('slider', 'trace speed'), traceSpeedInput, traceSpeedValue),
-      el('label', { class: 'cinema-control' }, controlName('slider', 'axis speed'), axisRotationSpeedInput, axisRotationSpeedValue),
+      controlRow(controlName('wheel', 'zoom'), zoomInput, zoomValue),
+      controlRow(controlName('slider', 'stretch'), stretchInput, stretchValue),
+      controlRow(controlName('−  +', 'depth'), depthInput, depthValue),
+      controlRow(controlName('slider', 'trace speed'), traceSpeedInput, traceSpeedValue),
+      controlRow(controlName('slider', 'axis speed'), axisRotationSpeedInput, axisRotationSpeedValue),
       el('label', { class: 'helix-direction' }, el('span', { class: 'cinema-control-name' }, 'direction'), directionInput),
       tracePauseButton,
       traceReverseButton,
       rungsButton,
       resetButton,
-    )
-    controlsToggle.setAttribute('aria-controls', 'helix-controls')
-    controlsToggle.setAttribute('aria-expanded', 'false')
-    prompt.classList.add('controls-collapsed')
-    stage.append(canvas, hud, prompt, controls)
+    ], { id: 'depth-helix', prompt, collapsed: true })
+    stage.append(canvas, hud, prompt, controls.node)
     ctx.root.append(stage)
 
     let width = 0
@@ -246,12 +244,6 @@ export const depthHelix: Procedure = {
     }
     rungsButton.addEventListener('click', toggleRungs)
     resetButton.addEventListener('click', resetView)
-    controlsToggle.addEventListener('click', () => {
-      const collapsed = controls.classList.toggle('is-collapsed')
-      prompt.classList.toggle('controls-collapsed', collapsed)
-      controlsToggle.setAttribute('aria-expanded', String(!collapsed))
-      controlsToggle.textContent = collapsed ? 'Show controls ↑' : 'Hide controls ↓'
-    })
     rotationXButton.addEventListener('click', () => {
       autoRotateX = !autoRotateX
       updateAxisButtons()
@@ -400,6 +392,7 @@ export const depthHelix: Procedure = {
     } finally {
       cancelAnimationFrame(clockRaf)
       window.clearInterval(rotationTimer)
+      controls.dispose()
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', resize)
       canvas.removeEventListener('pointerdown', onPointerDown)
@@ -411,21 +404,6 @@ export const depthHelix: Procedure = {
       stage.remove()
     }
   },
-}
-
-function slider(min: string, max: string, step: string, value: string, label: string): HTMLInputElement {
-  const input = el('input', { type: 'range', min, max, step, value })
-  input.setAttribute('aria-label', label)
-  return input
-}
-
-function controlName(shortcut: string, label: string): HTMLElement {
-  return el(
-    'span',
-    { class: 'cinema-control-name' },
-    el('kbd', { class: 'cinema-shortcut' }, shortcut),
-    el('span', {}, label),
-  )
 }
 
 function axisRotationButton(axis: 'X' | 'Y' | 'Z', active = false): HTMLButtonElement {

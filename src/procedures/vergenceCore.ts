@@ -9,6 +9,7 @@ import { renderFlatFusion, renderRds } from '../core/anaglyph'
 import { createStagePlacement, loadStoredScale, saveStoredScale } from './stagePlacement'
 import { el } from '../ui/router'
 import { loadSettings, saveSettings } from '../core/settings'
+import { controlName, controlRow, createProcedureControls } from '../ui/procedureControls'
 
 /**
  * Shared engine for the three disparity-vergence procedures.
@@ -358,9 +359,9 @@ function createManualDemand(opts: {
 
   const node = el('div')
   node.style.cssText =
-    'position:fixed;left:16px;bottom:14px;width:212px;padding:10px 12px;' +
+    'grid-column:1 / -1;padding:10px 12px;' +
     'border:1px solid var(--border);border-radius:8px;background:var(--bg-raised);' +
-    'font-size:12px;color:var(--text-dim);z-index:20'
+    'font-size:12px;color:var(--text-dim)'
 
   const title = el('div', {}, 'manual demand')
   title.style.cssText = 'font-family:var(--mono);margin-bottom:6px;color:var(--text)'
@@ -521,8 +522,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
   const promptNote = el('div', { class: 'muted' })
   prompt.append(promptMain, promptNote)
 
-  // Size control for the target square, mirroring Rock's slider. Bottom-right,
-  // because the advanced-mode demand panel already owns the bottom-left corner.
+  // Size control for the target square, shared by the whole vergence family.
   let sizeScale = loadStoredScale(SIZE_SCALE_KEY)
   const sizeSlider = el('input', {
     type: 'range',
@@ -531,17 +531,14 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     step: '0.05',
     value: String(sizeScale),
   })
-  sizeSlider.style.cssText = 'width:140px;accent-color:#8b97a6'
-  const sizeLabel = el('label')
-  sizeLabel.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer'
-  sizeLabel.append('size', sizeSlider)
-  const controlsWrap = el('div')
-  controlsWrap.style.cssText =
-    'position:fixed;right:18px;bottom:16px;display:flex;align-items:center;gap:14px;' +
-    'font-size:12px;color:#6d7886;z-index:1'
-  controlsWrap.append(sizeLabel)
+  const sizeValue = el(
+    'span',
+    { class: 'cinema-control-value' },
+    `${Math.round(sizeScale * 100)}%`,
+  )
+  const sizeControl = controlRow(controlName(null, 'size'), sizeSlider, sizeValue)
 
-  stage.append(canvasWrap, restDot, hud, prompt, controlsWrap)
+  stage.append(canvasWrap, restDot, hud, prompt)
   ctx.root.append(stage)
 
   // Jump Ductions can wait indefinitely for a real response instead of treating
@@ -561,16 +558,14 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       ),
     )
     timeoutControl.style.cssText =
-      'position:fixed;left:16px;top:72px;display:flex;gap:7px;align-items:center;' +
-      'padding:8px 10px;border:1px solid var(--border);border-radius:8px;' +
-      'background:var(--bg-raised);font-size:12px;color:var(--text-dim);z-index:20;cursor:pointer'
+      'display:flex;gap:7px;align-items:center;padding:8px 10px;' +
+      'font-size:12px;color:var(--text-dim);cursor:pointer'
     timeoutBox.addEventListener('change', () => {
       advanceOnTimeout = timeoutBox.checked
       const latest = loadSettings()
       saveSettings({ ...latest, jumpDuctionsReduceOnTimeout: advanceOnTimeout })
       timeoutBox.blur()
     })
-    stage.append(timeoutControl)
   }
 
   const feedback = new Feedback()
@@ -649,14 +644,13 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
       if (live.onScreen) paintStimulus()
     },
   })
-  controlsWrap.append(placement.autoToggle)
-
   /** The slider's scale, wobbled by auto mode, still bounded by the slider's range. */
   const targetScale = (): number =>
     Math.min(2, Math.max(0.5, sizeScale * placement.sizeJitter()))
 
   sizeSlider.addEventListener('input', () => {
     sizeScale = Number(sizeSlider.value) || 1
+    sizeValue.textContent = `${Math.round(sizeScale * 100)}%`
     saveStoredScale(SIZE_SCALE_KEY, sizeScale)
     if (live.onScreen) paintStimulus()
   })
@@ -778,7 +772,11 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
         },
       })
     : null
-  if (manual) stage.append(manual.node)
+  const controls = createProcedureControls(
+    [sizeControl, placement.autoToggle, timeoutControl, manual?.node ?? null],
+    { id: spec.id, prompt, collapsed: true },
+  )
+  stage.append(controls.node)
 
   const onDemandShortcut = (event: KeyboardEvent): void => {
     if (!manual || spec.id !== 'jumpDuctions' || event.ctrlKey || event.metaKey || event.altKey) return
@@ -1068,6 +1066,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     elapsed.dispose()
     window.removeEventListener('resize', onResize)
     window.removeEventListener('keydown', onDemandShortcut)
+    controls.dispose()
     feedback.close()
     stage.remove()
   }
@@ -1093,9 +1092,7 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     restDot.style.display = 'none'
     hudDemand.textContent = ''
     hudWarning.textContent = ''
-    controlsWrap.style.display = 'none'
-    if (manual) manual.node.style.display = 'none'
-    if (timeoutControl) timeoutControl.style.display = 'none'
+    controls.node.style.display = 'none'
 
     const scored = spec.axes.filter((axis) => sustained[axis] > 0)
     promptMain.textContent = scored.length

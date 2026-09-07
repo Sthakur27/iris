@@ -3,6 +3,12 @@ import type { Procedure, ProcedureContext } from './base'
 import { createElapsedClock } from './base'
 import { prismDioptresToPx } from '../core/geometry'
 import { el } from '../ui/router'
+import {
+  controlName,
+  controlRow,
+  createProcedureControls,
+  rangeInput,
+} from '../ui/procedureControls'
 
 const RED = '#ff0000'
 const BLUE = '#0000ff'
@@ -32,20 +38,19 @@ export const depthSpiral: Procedure = {
     let depth = 4
     let scale = 1
     let direction: 'convergence' | 'divergence' = 'convergence'
-    const depthInput = slider('0', '40', '0.5', String(depth), 'Fixed depth')
-    const scaleInput = slider('60', '140', '1', '100', 'Spiral scale')
+    const depthInput = rangeInput(0, 40, 0.5, depth, 'Fixed depth')
+    const scaleInput = rangeInput(60, 140, 1, 100, 'Spiral scale')
     const directionInput = el('select')
+    directionInput.setAttribute('aria-label', 'Depth direction')
     directionInput.append(el('option', { value: 'convergence' }, 'Convergence'), el('option', { value: 'divergence' }, 'Divergence'))
     const depthValue = el('span', { class: 'cinema-control-value' }, '4.0Δ')
     const scaleValue = el('span', { class: 'cinema-control-value' }, '100%')
-    const controls = el(
-      'div',
-      { class: 'cinema-controls' },
-      el('label', { class: 'cinema-control' }, cinemaControlName('−  +', 'fixed depth'), depthInput, depthValue),
-      el('label', { class: 'cinema-control' }, cinemaControlName('←  →', 'scale'), scaleInput, scaleValue),
-      el('label', { class: 'cinema-control' }, el('span', { class: 'cinema-control-name' }, 'direction'), directionInput),
-    )
-    stage.append(canvas, hud, prompt, controls)
+    const controls = createProcedureControls([
+      controlRow(controlName('−  +', 'fixed depth'), depthInput, depthValue),
+      controlRow(controlName('←  →', 'scale'), scaleInput, scaleValue),
+      controlRow('direction', directionInput),
+    ], { id: 'depth-spiral', prompt, collapsed: true })
+    stage.append(canvas, hud, prompt, controls.node)
     ctx.root.append(stage)
 
     let width = 0
@@ -95,22 +100,13 @@ export const depthSpiral: Procedure = {
       await new Promise<void>((resolve) => { if (signal.aborted) resolve(); else signal.addEventListener('abort', () => resolve(), { once: true }) })
     } finally {
       cancelAnimationFrame(clockRaf)
+      controls.dispose()
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', resize)
       elapsed.dispose()
       stage.remove()
     }
   },
-}
-
-function slider(min: string, max: string, step: string, value: string, label: string): HTMLInputElement {
-  const input = el('input', { type: 'range', min, max, step, value })
-  input.setAttribute('aria-label', label)
-  return input
-}
-
-function cinemaControlName(shortcut: string, label: string): HTMLElement {
-  return el('span', { class: 'cinema-control-name' }, el('kbd', { class: 'cinema-shortcut' }, shortcut), el('span', {}, label))
 }
 
 function drawSpiral(canvas: HTMLCanvasElement, w: number, h: number, dpr: number, disparity: number, redEye: EyeSide, scale: number): void {

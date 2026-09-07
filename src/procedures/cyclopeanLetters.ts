@@ -6,6 +6,13 @@ import { IntegrityMonitor, MIN_PLAUSIBLE_LATENCY_MS } from '../core/integrity'
 import { planStereoField, prismDioptresToPx } from '../core/geometry'
 import { rasterizeLetterMask, renderMaskedRds } from '../core/rdsMask'
 import { el } from '../ui/router'
+import {
+  actionButton,
+  controlName,
+  controlRow,
+  createProcedureControls,
+  rangeInput,
+} from '../ui/procedureControls'
 
 /**
  * Cyclopean Letters — experimental vergence trainer on a random-dot letter.
@@ -269,6 +276,9 @@ async function runCyclopeanLetters(ctx: ProcedureContext): Promise<void> {
     popPx = popDisparityPx(cal)
     field = planField(goalPd, popPx, cal)
     magnitude = Math.min(magnitude, reachableGoal())
+    if (pendingMagnitude !== null) pendingMagnitude = Math.min(pendingMagnitude, reachableGoal())
+    demandSlider.max = String(reachableGoal())
+    paintDemandControls()
     paintHud()
   }
   window.addEventListener('resize', onResize)
@@ -277,9 +287,50 @@ async function runCyclopeanLetters(ctx: ProcedureContext): Promise<void> {
   // Start low deliberately: the ladder should climb on evidence, not drop the user
   // straight into a demand they cannot fuse and let them guess their way through it.
   let magnitude = Math.min(reachableGoal(), Math.max(FLOOR_PD, goalPd * 0.25))
+  let pendingMagnitude: number | null = null
+  let autoDemand = true
   let rep = 0
   let consecutiveCannotSee = 0
   let currentPd = 0
+
+  const demandSlider = rangeInput(
+    FLOOR_PD,
+    reachableGoal(),
+    0.5,
+    magnitude,
+    'Vergence demand',
+  )
+  const demandValue = el('span', { class: 'cinema-control-value' })
+  const autoDemandButton = actionButton(null, 'Auto demand')
+  const paintDemandControls = (): void => {
+    const shown = pendingMagnitude ?? magnitude
+    demandSlider.value = String(shown)
+    demandValue.textContent = `${shown.toFixed(1)}Δ`
+    autoDemandButton.setAttribute('aria-pressed', String(autoDemand))
+  }
+  autoDemandButton.addEventListener('click', () => {
+    autoDemand = !autoDemand
+    pendingMagnitude = null
+    paintDemandControls()
+    autoDemandButton.blur()
+  })
+  demandSlider.addEventListener('input', () => {
+    pendingMagnitude = Math.max(
+      FLOOR_PD,
+      Math.min(reachableGoal(), Number(demandSlider.value)),
+    )
+    autoDemand = false
+    paintDemandControls()
+  })
+  const controls = createProcedureControls(
+    [
+      controlRow(controlName('←  →', 'demand'), demandSlider, demandValue),
+      autoDemandButton,
+    ],
+    { id: cyclopeanLetters.id, prompt },
+  )
+  stage.append(controls.node)
+  paintDemandControls()
 
   /**
    * The stimulus currently on screen, kept outside the rep loop so the dot-refresh
@@ -377,6 +428,14 @@ async function runCyclopeanLetters(ctx: ProcedureContext): Promise<void> {
 
   try {
     while (!signal.aborted) {
+      // A manual demand selected while a letter is live takes effect only for the
+      // next letter, keeping the rendered disparity and recorded trial identical.
+      if (pendingMagnitude !== null) {
+        magnitude = pendingMagnitude
+        pendingMagnitude = null
+        paintDemandControls()
+      }
+
       // --- Build the stimulus ---------------------------------------------
       const letter = LETTERS[Math.floor(Math.random() * LETTERS.length)] ?? 'A'
       currentPd = Math.min(magnitude, field.ceilingPd)
@@ -463,13 +522,16 @@ async function runCyclopeanLetters(ctx: ProcedureContext): Promise<void> {
       // --- Adaptive demand ----------------------------------------------------
       // Driven by the integrity monitor rather than raw accuracy — although with 16
       // alternatives a guesser floors at 6%, so accuracy and honesty mostly agree here.
-      const recommendation = monitor.recommendation()
-      if (response.kind === 'cannotSee') {
-        magnitude = Math.max(FLOOR_PD, magnitude - STEP_DOWN_PD)
-      } else if (recommendation === 'increase' && !monitor.verdict().atChance) {
-        magnitude = Math.min(reachableGoal(), magnitude + STEP_UP_PD)
-      } else if (recommendation === 'decrease') {
-        magnitude = Math.max(FLOOR_PD, magnitude - STEP_DOWN_PD)
+      if (autoDemand) {
+        const recommendation = monitor.recommendation()
+        if (response.kind === 'cannotSee') {
+          magnitude = Math.max(FLOOR_PD, magnitude - STEP_DOWN_PD)
+        } else if (recommendation === 'increase' && !monitor.verdict().atChance) {
+          magnitude = Math.min(reachableGoal(), magnitude + STEP_UP_PD)
+        } else if (recommendation === 'decrease') {
+          magnitude = Math.max(FLOOR_PD, magnitude - STEP_DOWN_PD)
+        }
+        paintDemandControls()
       }
 
       rep += 1
@@ -492,6 +554,7 @@ async function runCyclopeanLetters(ctx: ProcedureContext): Promise<void> {
     elapsed.dispose()
     window.removeEventListener('resize', onResize)
     feedback.close()
+    controls.dispose()
     stage.remove()
   }
 
@@ -512,6 +575,7 @@ async function runCyclopeanLetters(ctx: ProcedureContext): Promise<void> {
     canvasWrap.style.display = 'none'
     hudDemand.textContent = ''
     hudWarning.textContent = ''
+    controls.node.style.display = 'none'
 
     promptMain.textContent =
       sustained > 0
