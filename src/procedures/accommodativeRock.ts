@@ -10,6 +10,7 @@ import {
   controlName,
   controlRow,
   createProcedureControls,
+  presetInput,
 } from '../ui/procedureControls'
 
 /**
@@ -393,12 +394,14 @@ async function runRock(ctx: ProcedureContext): Promise<void> {
   window.addEventListener('resize', onResize)
   placement.apply()
 
-  sizeSlider.addEventListener('input', () => {
+  const applySize = (): void => {
     sizeScale = Number(sizeSlider.value) || 1
     sizeValue.textContent = `${sizeScale.toFixed(2)}×`
     saveStoredScale(SIZE_SCALE_KEY, sizeScale)
     onResize()
-  })
+  }
+  sizeSlider.addEventListener('input', applySize)
+  controls.presets.register(presetInput('target-size', 'Target size', sizeSlider, applySize))
   // The arrow keys are the answer channel. A slider that kept focus after being
   // dragged would keep eating them as adjustments, so it lets go on commit.
   sizeSlider.addEventListener('change', () => sizeSlider.blur())

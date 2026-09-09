@@ -349,6 +349,17 @@ async function runSaccades(ctx: ProcedureContext): Promise<void> {
     { id: saccades.id, prompt },
   )
   stage.append(controls.node)
+  controls.presets.register({
+    id: 'target-size',
+    label: 'Target size',
+    read: () => String(pendingSizeIndex ?? sizeIndex),
+    apply: (value) => {
+      const next = Number(value)
+      if (!Number.isFinite(next)) return
+      pendingSizeIndex = Math.max(0, Math.min(SIZE_FRACTIONS.length - 1, Math.round(next)))
+      paintSizeControls()
+    },
+  })
 
   /** Therapy actually done: stops for hidden tabs and for pauses, like the session clock. */
   const elapsed = createElapsedClock()

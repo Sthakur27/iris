@@ -13,6 +13,7 @@ import {
   controlName,
   controlRow,
   createProcedureControls,
+  presetInput,
   rangeInput,
 } from '../ui/procedureControls'
 
@@ -307,6 +308,12 @@ async function runDepthCinema(ctx: ProcedureContext): Promise<void> {
     depthValue.textContent = `${currentDemandPd.toFixed(1)}Δ`
   }
   depthInput.addEventListener('input', () => setCurrentDepth(Number(depthInput.value)))
+  movieControls.presets.register(
+    presetInput('speed', 'Movie speed', speedInput, () => setSpeed(Number(speedInput.value))),
+    presetInput('depth', 'Current depth', depthInput, () => setCurrentDepth(Number(depthInput.value))),
+    presetInput('arrows', 'Moving arrows', arrowsInput, () => setArrowCount(Number(arrowsInput.value))),
+    presetInput('depth-range', 'Depth range', depthRangeInput, () => setDepthRange(Number(depthRangeInput.value))),
+  )
 
   const draw = (): void => {
     const elapsedMs = elapsed.ms()

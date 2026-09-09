@@ -357,6 +357,17 @@ async function runPursuits(ctx: ProcedureContext): Promise<void> {
   )
   stage.append(controls.node)
   paintSpeedControls()
+  controls.presets.register({
+    id: 'path-speed',
+    label: 'Path speed',
+    read: () => String(pendingSpeedIndex ?? speedIndex),
+    apply: (value) => {
+      const next = Number(value)
+      if (!Number.isFinite(next)) return
+      pendingSpeedIndex = Math.max(0, Math.min(SPEED_SCALES.length - 1, Math.round(next)))
+      paintSpeedControls()
+    },
+  })
 
   /**
    * Phase reference for the animated path. This one is a raw wall clock on purpose:

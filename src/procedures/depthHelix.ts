@@ -10,6 +10,7 @@ import {
   controlRow,
   createAutoRangeControl,
   createProcedureControls,
+  presetInput,
   rangeInput,
 } from '../ui/procedureControls'
 
@@ -218,6 +219,17 @@ export const depthHelix: Procedure = {
         : 'Follow the moving glow and keep only that marked segment single and clear. Other depths may double.'
       render()
     }
+    controls.presets.register(
+      presetInput('rotation-x', 'X rotation', rotationXInput, update),
+      presetInput('rotation-y', 'Y rotation', rotationYInput, update),
+      presetInput('rotation-z', 'Z rotation', rotationZInput, update),
+      presetInput('zoom', 'Zoom', zoomInput, update),
+      presetInput('stretch', 'Stretch', stretchInput, update),
+      presetInput('direction', 'Direction', directionInput, update),
+      presetInput('depth', 'Depth', depthInput, update),
+      presetInput('trace-speed', 'Trace speed', traceSpeedInput, update),
+      presetInput('axis-speed', 'Axis speed', axisRotationSpeedInput, update),
+    )
     const nudge = (input: HTMLInputElement, amount: number): void => {
       const min = Number(input.min)
       const max = Number(input.max)

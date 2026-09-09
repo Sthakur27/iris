@@ -9,7 +9,7 @@ import { renderFlatFusion, renderRds } from '../core/anaglyph'
 import { createStagePlacement, loadStoredScale, saveStoredScale } from './stagePlacement'
 import { el } from '../ui/router'
 import { loadSettings, saveSettings } from '../core/settings'
-import { controlName, controlRow, createProcedureControls } from '../ui/procedureControls'
+import { controlName, controlRow, createProcedureControls, presetInput } from '../ui/procedureControls'
 
 /**
  * Shared engine for the three disparity-vergence procedures.
@@ -331,6 +331,8 @@ interface ManualDemand {
   followLadder(axis: VergenceAxis, magnitudePd: number): void
   /** Move one direction by a precise keyboard increment. */
   nudge(axis: VergenceAxis, deltaPd: number): void
+  /** Apply an exact value, used by shared presets and direct manipulation. */
+  set(axis: VergenceAxis, magnitudePd: number): void
 }
 
 function clamp(value: number, lo: number, hi: number): number {
@@ -477,6 +479,10 @@ function createManualDemand(opts: {
     nudge(axis, deltaPd) {
       if (!opts.axes.includes(axis)) return
       setByHand(axis, magnitudes[axis] + deltaPd)
+    },
+    set(axis, magnitudePd) {
+      if (!opts.axes.includes(axis)) return
+      setByHand(axis, magnitudePd)
     },
   }
 }
@@ -648,12 +654,13 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
   const targetScale = (): number =>
     Math.min(2, Math.max(0.5, sizeScale * placement.sizeJitter()))
 
-  sizeSlider.addEventListener('input', () => {
+  const applySize = (): void => {
     sizeScale = Number(sizeSlider.value) || 1
     sizeValue.textContent = `${Math.round(sizeScale * 100)}%`
     saveStoredScale(SIZE_SCALE_KEY, sizeScale)
     if (live.onScreen) paintStimulus()
-  })
+  }
+  sizeSlider.addEventListener('input', applySize)
   // Same reason as the demand slider: a control that kept focus would eat answers.
   sizeSlider.addEventListener('change', () => sizeSlider.blur())
 
@@ -777,6 +784,18 @@ async function runVergence(spec: VergenceSpec, ctx: ProcedureContext): Promise<v
     { id: spec.id, prompt, collapsed: true },
   )
   stage.append(controls.node)
+  controls.presets.register(presetInput('target-size', 'Target size', sizeSlider, applySize))
+  if (manual) {
+    controls.presets.register(...spec.axes.map((axis) => ({
+      id: `${axis}-demand`,
+      label: `${axis} demand`,
+      read: () => String(manual.magnitudePd(axis)),
+      apply: (value: string) => {
+        const next = Number(value)
+        if (Number.isFinite(next)) manual.set(axis, next)
+      },
+    })))
+  }
 
   const onDemandShortcut = (event: KeyboardEvent): void => {
     if (!manual || spec.id !== 'jumpDuctions' || event.ctrlKey || event.metaKey || event.altKey) return

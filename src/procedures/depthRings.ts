@@ -11,6 +11,7 @@ import { el } from '../ui/router'
 import {
   createAutoRangeControl,
   createProcedureControls,
+  presetInput,
   rangeInput,
 } from '../ui/procedureControls'
 
@@ -163,6 +164,11 @@ export const depthRings: Procedure = {
       spreadInput.value = String(Math.min(12, Math.max(0, Math.round(value * 10) / 10)))
       update()
     }
+
+    controls.presets.register(
+      presetInput('stack-depth', 'Stack depth', depthInput, update),
+      presetInput('ring-spread', 'Ring spread', spreadInput, update),
+    )
 
     window.addEventListener('keydown', onKey)
     window.addEventListener('resize', resize)

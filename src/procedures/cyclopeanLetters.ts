@@ -331,6 +331,17 @@ async function runCyclopeanLetters(ctx: ProcedureContext): Promise<void> {
   )
   stage.append(controls.node)
   paintDemandControls()
+  controls.presets.register({
+    id: 'demand',
+    label: 'Vergence demand',
+    read: () => String(pendingMagnitude ?? magnitude),
+    apply: (value) => {
+      const next = Number(value)
+      if (!Number.isFinite(next)) return
+      pendingMagnitude = Math.max(FLOOR_PD, Math.min(reachableGoal(), next))
+      paintDemandControls()
+    },
+  })
 
   /**
    * The stimulus currently on screen, kept outside the rep loop so the dot-refresh

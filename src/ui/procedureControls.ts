@@ -27,9 +27,25 @@ export interface ProcedureControlsOptions {
 export interface ProcedureControls {
   node: HTMLDivElement
   toggle: HTMLButtonElement
+  presets: ProcedurePresets
   isCollapsed(): boolean
   setCollapsed(collapsed: boolean): void
   dispose(): void
+}
+
+export interface PresetField {
+  /** Stable within this exercise; changing it intentionally stops loading old values. */
+  id: string
+  label: string
+  read(): string
+  /** Apply without changing unrelated modes such as automatic motion. */
+  apply(value: string): void
+}
+
+export interface ProcedurePresets {
+  register(...fields: PresetField[]): void
+  save(slot: number): boolean
+  load(slot: number): boolean
 }
 
 export interface AutoRangeOptions {
@@ -75,6 +91,32 @@ export function createProcedureControls(
     'button',
     { class: 'cinema-action procedure-controls-toggle', type: 'button' },
   )
+  const presetStatus = el('span', { class: 'procedure-presets-status' })
+  presetStatus.setAttribute('aria-live', 'polite')
+  const presetSaveButton = el(
+    'button',
+    { class: 'procedure-preset-save', type: 'button' },
+    'save',
+  )
+  presetSaveButton.setAttribute('aria-label', 'Save current settings to a preset slot')
+  const slotButtons = Array.from({ length: 5 }, (_, index) => {
+    const button = el(
+      'button',
+      { class: 'procedure-preset-slot', type: 'button' },
+      String(index + 1),
+    )
+    button.dataset.presetSlot = String(index + 1)
+    return button
+  })
+  const presetBar = el(
+    'div',
+    { class: 'procedure-presets' },
+    el('span', { class: 'procedure-presets-label' }, 'presets'),
+    presetSaveButton,
+    ...slotButtons,
+    el('span', { class: 'procedure-presets-help' }, '1–5 load · ⇧1–5 save'),
+    presetStatus,
+  )
   const node = el(
     'div',
     {
@@ -82,6 +124,7 @@ export function createProcedureControls(
       id: panelId,
     },
     toggle,
+    presetBar,
     ...children.filter((child): child is HTMLElement => child !== null),
   )
   node.dataset.exerciseControls = ''
@@ -89,6 +132,92 @@ export function createProcedureControls(
   toggle.setAttribute('aria-keyshortcuts', '\\')
   toggle.title = 'Show or hide exercise controls (shortcut: \\)'
   options.prompt?.classList.add('procedure-controls-prompt')
+
+  const presetFields = new Map<string, PresetField>()
+  const presetStorageKey = `iris.procedurePresets.v1.${options.id}`
+  let storedPresets = loadPresets(presetStorageKey)
+  let saveArmed = false
+  const announcePreset = (message: string): void => {
+    presetStatus.textContent = message
+  }
+  const refreshPresetButtons = (): void => {
+    presetSaveButton.classList.toggle('is-armed', saveArmed)
+    presetSaveButton.setAttribute('aria-pressed', String(saveArmed))
+    presetSaveButton.title = saveArmed ? 'Cancel saving a preset' : 'Choose a slot to save or overwrite'
+    slotButtons.forEach((button, index) => {
+      const filled = storedPresets[index] !== null
+      button.classList.toggle('is-filled', filled)
+      button.setAttribute(
+        'aria-label',
+        filled
+          ? `Load preset ${index + 1}; Shift+${index + 1} overwrites it`
+          : `Save current settings as preset ${index + 1}`,
+      )
+      button.title = filled
+        ? `Load preset ${index + 1} · Shift-click to overwrite`
+        : `Save current settings as preset ${index + 1}`
+    })
+  }
+  const savePreset = (slot: number): boolean => {
+    const index = slot - 1
+    if (index < 0 || index >= 5 || presetFields.size === 0) return false
+    const values: Record<string, string> = {}
+    for (const field of presetFields.values()) values[field.id] = field.read()
+    storedPresets[index] = values
+    if (!storePresets(presetStorageKey, storedPresets)) {
+      announcePreset(`Preset ${slot} could not be saved`)
+      return false
+    }
+    refreshPresetButtons()
+    announcePreset(`Preset ${slot} saved`)
+    return true
+  }
+  const loadPreset = (slot: number): boolean => {
+    const values = storedPresets[slot - 1]
+    if (!values) return false
+    let applied = 0
+    for (const field of presetFields.values()) {
+      const value = values[field.id]
+      if (typeof value !== 'string') continue
+      try {
+        field.apply(value)
+        applied += 1
+      } catch {
+        // A renamed or newly constrained field should not prevent compatible
+        // values in the same preset from loading.
+      }
+    }
+    if (applied === 0) return false
+    announcePreset(`Preset ${slot} loaded`)
+    return true
+  }
+  const presets: ProcedurePresets = {
+    register: (...fields) => {
+      for (const field of fields) presetFields.set(field.id, field)
+    },
+    save: savePreset,
+    load: loadPreset,
+  }
+  const onPresetClick = (event: MouseEvent): void => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    if (target.closest('.procedure-preset-save')) {
+      saveArmed = !saveArmed
+      announcePreset(saveArmed ? 'Choose a slot to save' : '')
+      refreshPresetButtons()
+      return
+    }
+    const button = target.closest<HTMLButtonElement>('[data-preset-slot]')
+    const slot = Number(button?.dataset.presetSlot)
+    if (!button || !Number.isInteger(slot)) return
+    if (saveArmed || event.shiftKey || storedPresets[slot - 1] === null) {
+      savePreset(slot)
+      saveArmed = false
+      refreshPresetButtons()
+    } else loadPreset(slot)
+  }
+  presetBar.addEventListener('click', onPresetClick)
+  refreshPresetButtons()
 
   const resizeObserver = typeof ResizeObserver === 'undefined' || !options.prompt
     ? null
@@ -117,16 +246,28 @@ export function createProcedureControls(
   }
   const onKey = (event: KeyboardEvent): void => {
     if (
-      options.keyboardToggle === false ||
       event.repeat ||
       event.ctrlKey ||
       event.metaKey ||
       event.altKey ||
-      event.code !== 'Backslash' ||
       isEditableTarget(event.target)
     ) return
-    event.preventDefault()
-    setCollapsed(!collapsed)
+    if (event.code === 'Backslash' && options.keyboardToggle !== false) {
+      event.preventDefault()
+      setCollapsed(!collapsed)
+      return
+    }
+    const presetMatch = /^(?:Digit|Numpad)([1-5])$/.exec(event.code)
+    if (!presetMatch) return
+    const slot = Number(presetMatch[1])
+    const handled = event.shiftKey ? savePreset(slot) : loadPreset(slot)
+    if (handled) {
+      if (event.shiftKey) {
+        saveArmed = false
+        refreshPresetButtons()
+      }
+      event.preventDefault()
+    }
   }
   // Exercise response handlers are usually installed on window. Keep keystrokes
   // used to operate a focused control from also being scored as answers.
@@ -148,12 +289,14 @@ export function createProcedureControls(
   return {
     node,
     toggle,
+    presets,
     isCollapsed: () => collapsed,
     setCollapsed,
     dispose: () => {
       toggle.removeEventListener('click', onToggle)
       node.removeEventListener('click', releaseButtonFocus)
       node.removeEventListener('keydown', isolateControlKey)
+      presetBar.removeEventListener('click', onPresetClick)
       window.removeEventListener('keydown', onKey)
       resizeObserver?.disconnect()
       options.prompt?.classList.remove('procedure-controls-prompt', 'controls-collapsed')
@@ -208,6 +351,23 @@ export function actionButton(shortcut: string | null, label: string): HTMLButton
   if (shortcut) button.append(el('kbd', { class: 'cinema-shortcut' }, shortcut))
   button.append(el('span', { class: 'cinema-action-label' }, label))
   return button
+}
+
+export function presetInput(
+  id: string,
+  label: string,
+  input: HTMLInputElement | HTMLSelectElement,
+  onApply: () => void,
+): PresetField {
+  return {
+    id,
+    label,
+    read: () => input.value,
+    apply: (value) => {
+      input.value = value
+      onApply()
+    },
+  }
 }
 
 /**
@@ -327,4 +487,36 @@ function isEditableTarget(target: EventTarget | null): boolean {
     target instanceof HTMLTextAreaElement ||
     target instanceof HTMLSelectElement ||
     (target instanceof HTMLElement && target.isContentEditable)
+}
+
+type StoredPreset = Record<string, string> | null
+
+function loadPresets(storageKey: string): StoredPreset[] {
+  const empty = (): StoredPreset[] => Array.from({ length: 5 }, () => null)
+  try {
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return empty()
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return empty()
+    return Array.from({ length: 5 }, (_, index) => {
+      const candidate: unknown = parsed[index]
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null
+      const values: Record<string, string> = {}
+      for (const [key, value] of Object.entries(candidate)) {
+        if (typeof value === 'string') values[key] = value
+      }
+      return Object.keys(values).length > 0 ? values : null
+    })
+  } catch {
+    return empty()
+  }
+}
+
+function storePresets(storageKey: string, presets: StoredPreset[]): boolean {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(presets))
+    return true
+  } catch {
+    return false
+  }
 }

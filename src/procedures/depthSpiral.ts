@@ -7,6 +7,7 @@ import {
   controlName,
   controlRow,
   createProcedureControls,
+  presetInput,
   rangeInput,
 } from '../ui/procedureControls'
 
@@ -80,6 +81,11 @@ export const depthSpiral: Procedure = {
       scaleValue.textContent = `${Math.round(scale * 100)}%`
       render()
     }
+    controls.presets.register(
+      presetInput('depth', 'Depth', depthInput, update),
+      presetInput('scale', 'Scale', scaleInput, update),
+      presetInput('direction', 'Direction', directionInput, update),
+    )
     const onKey = (event: KeyboardEvent): void => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return
       if (event.code === 'Minus' || event.code === 'NumpadSubtract') { depthInput.value = String(Math.max(0, depth - 0.5)); update() }
