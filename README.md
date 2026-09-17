@@ -25,6 +25,22 @@ records the rendering environment at calibration time and blocks a session if it
 - A monocular flipper lens set (the default ladder runs +0.75/−1.50 up to −5.00/+2.50)
 - A credit card, once, for screen calibration
 
+## Number Search
+
+Choose **Self-guided → Number Search** for a flipper exercise with **100 scattered characters**:
+90 capital letters and exactly 10 digits (0–9). Characters are spread across the screen without
+rows or columns, with compact controls at the top and instructions along the bottom.
+
+Use your flippers and eye-covering setup as instructed by your clinician. Find a number in any
+order, click or tap it, then flip your lens and find another. Each digit disappears when selected,
+the remaining-number counter updates, and all other characters stay in place. Clicking a letter
+does nothing.
+
+After all 10 digits are found, select **New board** to continue with a fresh arrangement, or
+**End session** to finish. The default session is five minutes, with the self-guided half-length
+option available. Pause and resume whenever needed; responses are saved with your session results.
+Number Search is available on its own and is not included in the structured daily plan.
+
 ## What it does differently from HTS
 
 | | HTS2 | Iris |
@@ -42,7 +58,7 @@ records the rendering environment at calibration time and blocks a session if it
 
 ```
 src/core/        anaglyph rendering, geometry, integrity, safety, session runner, storage
-src/procedures/  the six therapy procedures
+src/procedures/  therapy procedures and self-guided exercises, including Number Search
 src/ui/          calibration wizard, home, settings, session shell, results and analysis
 docs/            research, product ideas, failure-mode analysis
 ```
