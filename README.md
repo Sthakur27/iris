@@ -1,29 +1,81 @@
 # Iris
 
-A local, unlimited-use home vision therapy app for convergence and accommodative work. Rebuilds
-what HTS2 does and then fixes what it gets wrong.
+A browser-based home vision therapy practice app with a structured daily plan, individual
+exercises, interactive depth scenes, and session history. Built with TypeScript and Vite.
+Core practice runs locally without an account or API key.
 
-**This is practice software, not a diagnosis.** It cannot measure your near point of convergence,
-your fusional ranges, or your symptom score — those need a real exam. Every prescribed value in it
-defaults to HTS's published numbers, which are not a prescription. Set your own in Settings.
+**This is practice software, not a diagnosis.** Iris cannot measure eye position, near point of
+convergence, fusional ranges, or clinical symptom scores. Built-in training defaults are not a
+personal prescription; use Settings to enter the goals assigned by your clinician.
 
-## Running it
+## Quick start
+
+Install Node.js and pnpm, then run:
 
 ```bash
-pnpm install && pnpm dev
+pnpm install
+pnpm dev
 ```
 
-Then open the printed URL and work through the calibration wizard.
+Open [localhost:5183](http://localhost:5183) and complete the calibration wizard. The dev server
+uses a fixed port and fails if it is occupied: changing ports would give you a different browser
+storage location. Keep using the same hostname and port to retain access to your saved data.
 
-Whatever browser zoom you calibrate at is fine — it gets baked into the measurement and stays
-correct. What breaks the calibration is *changing* zoom or display scaling afterwards, so the app
-records the rendering environment at calibration time and blocks a session if it has drifted since.
+### Equipment and calibration
 
-## Gear
+- Red/blue anaglyph glasses for binocular exercises, with the **red lens over your right eye**.
+- A monocular flipper lens set for accommodative exercises, as prescribed.
+- Your screen dimensions, a supported screen preset, or a bank card for calibrating screen scale.
 
-- Red/blue anaglyph glasses
-- A monocular flipper lens set (the default ladder runs +0.75/−1.50 up to −5.00/+2.50)
-- A credit card, once, for screen calibration
+Calibration records screen scale and viewing distance. Keep the same browser zoom and display
+scaling afterward; detected scaling changes block new sessions until corrected or recalibrated.
+Each session reminds you of your calibrated viewing distance.
+
+## Choose how to practice
+
+**Structured plan** runs the following sequence continuously, with Pause available throughout:
+
+| Exercise | Duration |
+|---|---:|
+| Pursuits | 3 minutes |
+| Saccades | 3 minutes |
+| Divergence | 7 minutes |
+| Convergence | 7 minutes |
+| Accommodative Rock | 5 minutes |
+
+The base plan totals **25 minutes**. Jump Ductions adds another 7 minutes once Convergence and
+Divergence have each been completed at least once.
+
+**Self-guided** lets you choose one exercise using its Play button. It uses the listed duration,
+with a half-length option for shorter sessions. In addition to the plan exercises, it includes:
+
+| Exercise | Duration | Activity |
+|---|---:|---|
+| Number Search | 5 minutes | Find scattered digits while practicing with flippers |
+| Cyclopean Letters | 5 minutes | Identify letters in a binocular random-dot target |
+| Depth Cinema | 7 minutes | Animated depth scene with adjustable vergence and motion |
+| Depth Rings | 7 minutes | Concentric rings with adjustable stack depth and spread |
+| Depth Spiral | 7 minutes | Lettered square-spiral fusion target |
+| Depth Helix | 7 minutes | Binocular helix with rotation and depth controls |
+
+The experimental depth exercises and Cyclopean Letters are self-guided only and do not join the
+structured plan. The home screen also shows your practice history over the last 14 days.
+
+### Session controls
+
+- **Pause / Resume** stops and restarts the session clock. Hiding the tab also pauses timing.
+- **End session** saves the recorded portion of a session.
+- **Replay** on Results starts the same exercise or plan directly, retaining the original duration
+  for new sessions and checking calibration again.
+- **Hit FX** toggles extra chimes and visual feedback on exercises that produce response trials.
+  It is hidden for the four continuous depth exercises.
+- The **gear icon** opens exercise settings where available. Panels scroll on small screens.
+  Shared settings panels support five saved presets; `1`–`5` loads a preset and `Shift` + `1`–`5`
+  saves one. The backslash key toggles the panel where supported.
+
+Exercise-specific response keys and controls are explained in the preview and on-screen prompts.
+Sessions do not enforce a daily cap or scheduled breaks. After two sessions in a day, Iris shows
+an advisory; you can pause whenever you need a break.
 
 ## Number Search
 
@@ -41,35 +93,60 @@ After all 10 digits are found, select **New board** to continue with a fresh arr
 option available. Pause and resume whenever needed; responses are saved with your session results.
 Number Search is available on its own and is not included in the structured daily plan.
 
-## What it does differently from HTS
+## Results and optional coaching
 
-| | HTS2 | Iris |
-|---|---|---|
-| Scoring | Percent correct, cycles/min | Highest demand sustained with *trustworthy* responses |
-| Guessing | Guarded only by an 80% pass mark | Catch trials, accuracy tested against chance, sub-250 ms responses rejected, a free "I can't see it" key |
-| Suppression | Not detected | Monocular probes, alternating eyes, flagged when one eye stops reporting |
-| Progression | Fixed level ladders with star gates | Adaptive, driven by whether responses are trustworthy at the current demand |
-| Rest | None between reps | Enforced look-away resets, skippable but recorded as skipped |
-| Screen limits | Silent | Computes and warns when the prescribed goal exceeds what your screen and viewing distance can display |
-| Clock | Runs regardless | Pauses when the tab is hidden, or when you pause |
-| Dose | Unlimited | Two sessions a day, with an explanation |
+Results include recorded exercise activity, response-integrity findings, symptom reporting, and
+history charts where comparable data is available. Scored exercises use checks such as catch
+trials, response timing, and accuracy against chance. Charts keep different calibrations separate;
+keyboard response time is not a measurement of eye movement.
 
-## Layout
+An optional post-session narration sends a summary of findings and goals to Anthropic **only when
+you select the send button**. Standard results and exercises work without it.
 
-```
-src/core/        anaglyph rendering, geometry, integrity, safety, session runner, storage
-src/procedures/  therapy procedures and self-guided exercises, including Number Search
-src/ui/          calibration wizard, home, settings, session shell, results and analysis
-docs/            research, product ideas, failure-mode analysis
+To enable narration during local development, set `ANTHROPIC_API_KEY` in your shell or a gitignored
+`.api`, `.env.local`, or `.env` file in the project root, then restart the dev server:
+
+```dotenv
+ANTHROPIC_API_KEY=your-key-here
 ```
 
-## Documents
+The key stays in the Node.js dev server. The browser calls `/api/analyze`, which forwards the
+summary to Anthropic. This middleware is included only in the development server: a static build
+or `pnpm preview` does not provide the coaching endpoint.
 
-- [docs/FAILURE-MODES.md](docs/FAILURE-MODES.md) — every known way this goes silently wrong, and who owns the fix
-- [docs/RESEARCH.md](docs/RESEARCH.md) — the clinical and motor-learning evidence base
-- [docs/IDEAS.md](docs/IDEAS.md) — product ideas beyond HTS parity
+## Development
 
-## Storage
+| Command | Purpose |
+|---|---|
+| `pnpm dev` | Start the local Vite server on port 5183 |
+| `pnpm typecheck` | Check TypeScript without emitting files |
+| `pnpm build` | Typecheck and build static assets into `dist/` |
+| `pnpm preview` | Preview the built assets locally |
 
-Everything lives in `localStorage` under `iris.*`. No server, no database, no account.
-Clearing site data resets your history.
+The production build can be served as static files. Navigation uses hash routes, so application
+routes do not need server-side URL rewrites. Preview and other deployments have separate browser
+storage when their origin differs from the development server.
+
+```text
+src/core/        rendering, geometry, integrity checks, session runner, settings and storage
+src/procedures/  structured-plan exercises and self-guided activities
+src/ui/          screens, previews, exercise controls, feedback, results and analysis
+server/          optional development-only coaching endpoint
+docs/           research, product ideas and failure-mode analysis
+```
+
+## Storage and privacy
+
+Settings, calibration, session history, symptoms, and exercise presets are stored in browser
+`localStorage` under `iris.*` keys. There is no account, database, or automatic device sync.
+Clearing site data removes the saved information. Core exercise data stays in the browser;
+requesting optional coaching sends the analysis summary to the configured Anthropic service.
+
+## Project notes
+
+- [Failure modes](docs/FAILURE-MODES.md) — risks and integrity checks
+- [Research](docs/RESEARCH.md) — background sources and rationale
+- [Ideas](docs/IDEAS.md) — product exploration
+
+These notes capture design history; the current behavior is described above and implemented in
+`src/`.
