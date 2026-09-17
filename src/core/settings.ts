@@ -87,6 +87,9 @@ export const DAILY_PROTOCOL: { id: ProcedureId; label: string; seconds: number }
 /** Jump Ductions is gated behind Convergence and Divergence, exactly as HTS gates it. */
 export const JUMP_DUCTIONS = { id: 'jumpDuctions' as const, label: 'Jump Ductions', seconds: 420 }
 
+/** Self-guided flipper search with ten digits among scattered capitals. */
+export const NUMBER_SEARCH = { id: 'numberSearch' as const, label: 'Number Search', seconds: 300 }
+
 /**
  * Cyclopean Letters is experimental and self-guided only: it is not part of HTS's
  * protocol, so it never joins DAILY_PROTOCOL, but it is not gated either — its whole

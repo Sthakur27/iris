@@ -1,5 +1,6 @@
 import type { ProcedureId } from '../core/types'
 import type { Procedure } from './base'
+import { numberSearch } from './numberSearch'
 import { convergence } from './convergence'
 import { divergence } from './divergence'
 import { jumpDuctions } from './jumpDuctions'
@@ -14,6 +15,7 @@ import { depthHelix } from './depthHelix'
 
 /** Passive depth scenes never emit response trials, so they have no hit effects. */
 export const PROCEDURE_HIT_FEEDBACK: Record<ProcedureId, boolean> = {
+  numberSearch: false,
   convergence: true,
   divergence: true,
   jumpDuctions: true,
@@ -30,6 +32,7 @@ export const PROCEDURE_HIT_FEEDBACK: Record<ProcedureId, boolean> = {
 /** Single place the session runner resolves a plan step to an implementation. */
 export const PROCEDURE_REGISTRY: Map<ProcedureId, Procedure> = new Map(
   [
+    numberSearch,
     convergence,
     divergence,
     jumpDuctions,

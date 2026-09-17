@@ -16,6 +16,7 @@
 import { el } from '../router'
 import type { Nav, RouteParams, Screen } from '../router'
 import {
+  NUMBER_SEARCH,
   CYCLOPEAN_LETTERS,
   DAILY_PROTOCOL,
   DEPTH_CINEMA,
@@ -205,6 +206,7 @@ export const homeScreen: Screen = (root, nav) => {
     const list: { id: string; label: string; seconds: number }[] = [...DAILY_PROTOCOL]
     if (jumpDuctionsUnlocked()) list.push(JUMP_DUCTIONS)
     // Experimental, ungated, self-guided only — deliberately not in DAILY_PROTOCOL.
+    list.push(NUMBER_SEARCH)
     list.push(CYCLOPEAN_LETTERS)
     list.push(DEPTH_CINEMA)
     list.push(DEPTH_RINGS)
@@ -424,6 +426,10 @@ export const homeScreen: Screen = (root, nav) => {
   /* ------------------------------------------------------------- reminders */
 
   function checkItems(): CheckItem[] {
+    if (requested.mode === 'single' && requested.procedureId === 'numberSearch') return [
+      { title: 'Flippers ready', why: 'Use your flippers and the eye-covering setup from your clinician’s exercise. Find and click a number, flip the lens, then find another.' },
+      { title: 'Find numbers in any order', why: 'There are 10 digits among 90 capital letters. Each number disappears when clicked; the remaining characters stay still.' },
+    ]
     return [
       {
         title: 'Anaglyph glasses on, lenses clean',
@@ -628,7 +634,7 @@ export const homeScreen: Screen = (root, nav) => {
     )
     const list = el('ul', { class: 'checklist' })
     for (const item of checkItems()) list.append(checkRow(item))
-    list.append(orientationRow())
+    if (!(requested.mode === 'single' && requested.procedureId === 'numberSearch')) list.append(orientationRow())
     reminders.append(list)
 
     const preview = previewCard()

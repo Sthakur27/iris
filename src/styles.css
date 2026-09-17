@@ -844,3 +844,94 @@ label {
   color: var(--text-dim);
   margin-top: 4px;
 }
+
+/* Number Search keeps the chrome at the edges to give the field the screen. */
+.number-search-status {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: 14px var(--mono);
+  color: var(--text);
+}
+.number-search-field {
+  position: absolute;
+  inset: 48px 12px 34px;
+}
+.number-search-character {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: var(--character-size, 44px);
+  height: var(--character-size, 44px);
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #dfe7ef;
+  font: 500 var(--character-font, 16px) / 1 var(--mono);
+  cursor: default;
+  user-select: none;
+  touch-action: manipulation;
+}
+.number-search-character:hover,
+.number-search-character:active {
+  background: transparent;
+  color: #dfe7ef;
+}
+.number-search-character:focus-visible { outline: 1px solid var(--text-dim); }
+.number-search-character[hidden], .number-search-next[hidden] { display: none; }
+.number-search-footer {
+  position: absolute;
+  bottom: 4px;
+  left: 12px;
+  right: 12px;
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.number-search-next { min-height: 26px; padding: 3px 10px; font-size: 12px; }
+
+#app:has(.number-search) > .stage-hud {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  right: 200px;
+  padding: 14px 16px;
+  gap: 16px;
+  font-size: 12px;
+}
+#app:has(.number-search) > .stage-hud > :last-child {
+  margin-left: auto;
+  font-size: 12px;
+}
+#app:has(.number-search) > .session-controls {
+  top: 6px;
+  right: 12px;
+  gap: 6px;
+}
+#app:has(.number-search) > .session-controls .ghost {
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+@media (max-width: 800px) {
+  #app:has(.number-search) > .stage-hud {
+    right: 0;
+    padding: 10px 12px;
+    gap: 12px;
+    font-size: 11px;
+  }
+  #app:has(.number-search) > .session-controls { top: 36px; }
+  .number-search-status {
+    top: 44px;
+    left: 12px;
+    transform: none;
+    font-size: 13px;
+  }
+  .number-search-field { top: 76px; }
+}

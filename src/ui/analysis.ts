@@ -30,6 +30,7 @@ import type {
 /* ------------------------------------------------------------------ labels */
 
 export const PROCEDURE_LABELS: Record<ProcedureId, string> = {
+  numberSearch: 'Number Search',
   pursuits: 'Pursuits',
   saccades: 'Saccades',
   divergence: 'Divergence',
@@ -56,6 +57,7 @@ export function demandUnit(id: ProcedureId): DemandUnit {
       return 'pd'
     case 'accommodativeRock':
       return 'level'
+    case 'numberSearch':
     case 'pursuits':
     case 'saccades':
     case 'depthCinema':

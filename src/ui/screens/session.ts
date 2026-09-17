@@ -8,6 +8,7 @@
 import { el } from '../router'
 import type { Screen } from '../router'
 import {
+  NUMBER_SEARCH,
   CYCLOPEAN_LETTERS,
   DAILY_PROTOCOL,
   DEPTH_CINEMA,
@@ -57,6 +58,7 @@ export const sessionScreen: Screen = (root, nav) => {
     const known = [
       ...DAILY_PROTOCOL,
       JUMP_DUCTIONS,
+      NUMBER_SEARCH,
       CYCLOPEAN_LETTERS,
       DEPTH_CINEMA,
       DEPTH_RINGS,

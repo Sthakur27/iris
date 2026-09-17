@@ -7,6 +7,7 @@ export type ProcedureId =
   | 'saccades'
   | 'divergence'
   | 'convergence'
+  | 'numberSearch'
   | 'accommodativeRock'
   | 'jumpDuctions'
   | 'cyclopeanLetters'

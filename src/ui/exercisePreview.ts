@@ -13,6 +13,7 @@
  * exercise will actually start at. Where that matters the caption says so.
  */
 
+import { createSearchBoard } from '../procedures/numberSearch'
 import { el } from './router'
 import { drawLandoltC, renderRds } from '../core/anaglyph'
 import { rasterizeLetterMask, renderMaskedRds } from '../core/rdsMask'
@@ -49,6 +50,7 @@ const DOT_DENSITY = 0.5
 const PREVIEW_DEMAND_PD = 2
 
 const PROCEDURE_IDS: readonly ProcedureId[] = [
+  'numberSearch',
   'pursuits',
   'saccades',
   'divergence',
@@ -95,6 +97,12 @@ function copyFor(id: ProcedureId): Copy {
   const spaceMeans = `I can’t see it. ${spaceRest}`
 
   switch (id) {
+    case 'numberSearch':
+      return {
+        stimulus: '100 scattered characters: 90 capital letters and 10 digits, with no rows or columns.',
+        task: 'Use your flippers and eye-covering setup as instructed by your clinician. Find a number, click it, then flip your lens and find another. Work in any order until none remain.',
+        keys: [{ key: 'Click / tap', means: 'Remove a number. Letters stay in place.' }],
+      }
     case 'pursuits':
       return {
         stimulus:
@@ -267,6 +275,17 @@ interface Drawn {
 function draw(id: ProcedureId, cal: Calibration): Drawn {
   const canvas = el('canvas', { class: 'preview-canvas' })
   switch (id) {
+    case 'numberSearch': {
+      canvas.width = PREVIEW_WIDTH_PX
+      canvas.height = PREVIEW_HEIGHT_PX
+      const g = canvas.getContext('2d')!
+      g.fillStyle = NEUTRAL
+      g.font = '12px monospace'
+      g.textAlign = 'center'
+      g.textBaseline = 'middle'
+      for (const c of createSearchBoard()) g.fillText(c.value, 10 + c.x * 400, 10 + c.y * 130)
+      return { canvas, caveat: 'A sample board. Each new board scatters the characters again; finding a digit leaves everything else in place.' }
+    }
     case 'convergence':
     case 'divergence':
     case 'jumpDuctions': {
