@@ -60,11 +60,22 @@ const MIN_DISTANCE_CM = 20
 const MAX_DISTANCE_CM = 150
 
 type Phase = 'scale' | 'distance' | 'orientation'
-type ScaleMode = 'card' | 'spec'
+type ScaleMode = 'preset' | 'card' | 'spec'
 type SpecAxis = 'diagonal' | 'width'
 type SpecUnit = 'in' | 'cm'
 
 const CM_PER_INCH = 2.54
+
+const SCREEN_PRESETS = [
+  { name: 'Regular iPhone', inches: 6.1 },
+  { name: 'Large iPhone', inches: 6.7 },
+  { name: 'MacBook 13″', inches: 13.6 },
+  { name: 'MacBook 14″', inches: 14.2 },
+  { name: 'MacBook 15″', inches: 15.3 },
+  { name: 'MacBook 16″', inches: 16.2 },
+  { name: '28″ monitor', inches: 28 },
+  { name: '32″ monitor', inches: 32 },
+] as const
 
 /**
  * Pixels per centimetre derived from the panel's physical size.
@@ -94,10 +105,9 @@ export const setupScreen: Screen = (root, nav) => {
   let distanceCm = settings.calibration.viewingDistanceCm
   let error: string | null = null
 
-  // Two ways to establish screen scale. Card matching works anywhere and needs no
-  // knowledge of your hardware; entering the panel's physical size is faster and more
-  // precise if you happen to know it, which many people with a desktop monitor do.
-  let scaleMode: ScaleMode = 'card'
+  // Offer common sizes first, but require an explicit choice before continuing.
+  let scaleMode: ScaleMode = 'preset'
+  let selectedPreset: (typeof SCREEN_PRESETS)[number] | null = null
   let specAxis: SpecAxis = 'diagonal'
   let specUnit: SpecUnit = 'in'
   let specValue = 24
@@ -156,11 +166,13 @@ export const setupScreen: Screen = (root, nav) => {
 
     const modes = el('div', { class: 'steps' })
     const modeButtons: [ScaleMode, string][] = [
-      ['card', 'Match a bank card'],
+      ['preset', 'Choose a screen'],
       ['spec', 'Enter my screen size'],
+      ['card', 'Match a bank card'],
     ]
     for (const [id, label] of modeButtons) {
       const b = el('button', { class: scaleMode === id ? 'primary' : '' }, label)
+      b.setAttribute('aria-pressed', String(scaleMode === id))
       b.addEventListener('click', () => {
         scaleMode = id
         error = null
@@ -170,9 +182,10 @@ export const setupScreen: Screen = (root, nav) => {
     }
     card.append(modes)
 
-    card.append(scaleMode === 'card' ? cardMatcher() : panelSpec())
+    card.append(scaleMode === 'preset' ? screenPresets() : scaleMode === 'card' ? cardMatcher() : panelSpec())
 
     const next = el('button', { class: 'primary' }, 'Next: viewing distance')
+    next.disabled = scaleMode === 'preset' && selectedPreset === null
     next.addEventListener('click', () => {
       if (!inRange()) {
         error =
@@ -187,6 +200,43 @@ export const setupScreen: Screen = (root, nav) => {
     })
     card.append(el('div', { class: 'field' }), next)
     return card
+  }
+
+  function screenPresets(): HTMLElement {
+    const wrap = el('div')
+    wrap.append(el('p', {},
+      'Choose the screen you are using. These are approximate defaults; check the diagonal size shown. ' +
+      'If your model differs, enter its size or match a bank card.',
+    ))
+    const choices = el('div', { class: 'screen-presets' })
+    for (const preset of SCREEN_PRESETS) {
+      const selected = selectedPreset === preset
+      const button = el('button', { class: `screen-preset${selected ? ' primary' : ''}` },
+        el('strong', {}, preset.name),
+        el('small', {}, `${preset.inches}″ diagonal`),
+      )
+      button.setAttribute('aria-pressed', String(selected))
+      button.addEventListener('click', () => {
+        selectedPreset = preset
+        error = null
+        render()
+        screen.querySelector<HTMLButtonElement>('.screen-preset[aria-pressed="true"]')?.focus()
+      })
+      choices.append(button)
+    }
+    wrap.append(choices)
+    if (selectedPreset) {
+      pxPerCm = pxPerCmFromPanelSize(selectedPreset.inches, 'in', 'diagonal') ?? NaN
+      wrap.append(el('div', { class: 'readout' },
+        Number.isFinite(pxPerCm) ? `1 cm ≈ ${pxPerCm.toFixed(1)} screen pixels` : 'Could not read your screen dimensions.',
+      ))
+      wrap.append(el('p', { class: inRange() ? 'gloss' : 'gloss warn' },
+        inRange()
+          ? 'Use this preset on the selected display. Recalibrate when you switch screens.'
+          : 'This size does not match the reported screen dimensions. Choose another size or match a bank card.',
+      ))
+    }
+    return wrap
   }
 
   /** Entering the panel's physical dimensions — exact, if you know them. */
@@ -216,6 +266,7 @@ export const setupScreen: Screen = (root, nav) => {
     const recompute = (): void => {
       const derived = pxPerCmFromPanelSize(specValue, specUnit, specAxis)
       if (derived === null) {
+        pxPerCm = NaN
         readout.textContent = 'Could not read your screen dimensions.'
         note.textContent = 'Use the bank-card method instead.'
         note.className = 'gloss warn'

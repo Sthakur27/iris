@@ -110,6 +110,27 @@
   color: var(--text);
 }
 
+.screen-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.screen-preset {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px;
+  text-align: left;
+}
+
+.screen-preset small {
+  font-weight: normal;
+  opacity: 0.8;
+}
+
 .card-stage {
   background: #05070a;
   border: 1px solid var(--border);
