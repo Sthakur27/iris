@@ -3,6 +3,7 @@ import type { ProcedureId, ProcedureResult, SessionRecord, Settings, Trial } fro
 import { saveSession } from './settings'
 import { PausableClock } from './safety'
 import { isTherapyPaused, resetTherapyPause, setTherapyPaused } from './sessionState'
+import type { SessionRequest } from './sessionState'
 
 export interface PlanStep {
   id: ProcedureId
@@ -46,10 +47,12 @@ export async function runSession(
   plan: PlanStep[],
   registry: Map<ProcedureId, Procedure>,
   hooks: RunnerHooks,
+  request?: SessionRequest,
 ): Promise<SessionRecord> {
   const record: SessionRecord = {
     id: `${Date.now()}`,
     startedAt: Date.now(),
+    request,
     results: [],
     endedEarly: false,
   }

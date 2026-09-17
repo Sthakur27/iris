@@ -91,6 +91,15 @@ export function createProcedureControls(
     'button',
     { class: 'cinema-action procedure-controls-toggle', type: 'button' },
   )
+  const gear = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  gear.setAttribute('viewBox', '0 0 24 24')
+  gear.setAttribute('aria-hidden', 'true')
+  gear.setAttribute('fill', 'none')
+  gear.setAttribute('stroke', 'currentColor')
+  gear.setAttribute('stroke-width', '1.7')
+  gear.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="m9.5 3-.6 2.3-1.5.9-2.3-.6-2.5 4.3 1.7 1.7v1.8l-1.7 1.7 2.5 4.3 2.3-.6 1.5.9.6 2.3h5l.6-2.3 1.5-.9 2.3.6 2.5-4.3-1.7-1.7v-1.8l1.7-1.7-2.5-4.3-2.3.6-1.5-.9L14.5 3z"/><circle cx="12" cy="12.5" r="3.2"/>'
+  const toggleLabel = el('span', { class: 'procedure-controls-toggle-label' }, 'Hide settings')
+  toggle.append(gear, toggleLabel)
   const presetStatus = el('span', { class: 'procedure-presets-status' })
   presetStatus.setAttribute('aria-live', 'polite')
   const presetSaveButton = el(
@@ -117,20 +126,23 @@ export function createProcedureControls(
     el('span', { class: 'procedure-presets-help' }, '1–5 load · ⇧1–5 save'),
     presetStatus,
   )
+  const content = el(
+    'div',
+    { class: 'procedure-controls-content', id: panelId },
+    presetBar,
+    ...children.filter((child): child is HTMLElement => child !== null),
+  )
   const node = el(
     'div',
     {
       class: `cinema-controls procedure-controls${options.className ? ` ${options.className}` : ''}`,
-      id: panelId,
     },
     toggle,
-    presetBar,
-    ...children.filter((child): child is HTMLElement => child !== null),
+    content,
   )
   node.dataset.exerciseControls = ''
   toggle.setAttribute('aria-controls', panelId)
-  toggle.setAttribute('aria-keyshortcuts', '\\')
-  toggle.title = 'Show or hide exercise controls (shortcut: \\)'
+  if (options.keyboardToggle !== false) toggle.setAttribute('aria-keyshortcuts', '\\')
   options.prompt?.classList.add('procedure-controls-prompt')
 
   const presetFields = new Map<string, PresetField>()
@@ -235,14 +247,18 @@ export function createProcedureControls(
     collapsed = next
     saveControlsCollapsed(collapsed)
     node.classList.toggle('is-collapsed', collapsed)
+    content.hidden = collapsed
     options.prompt?.classList.toggle('controls-collapsed', collapsed)
     toggle.setAttribute('aria-expanded', String(!collapsed))
-    toggle.textContent = collapsed ? 'Show controls ↑' : 'Hide controls ↓'
+    const label = collapsed ? 'Show exercise settings' : 'Hide exercise settings'
+    toggle.setAttribute('aria-label', label)
+    toggle.title = `${label}${options.keyboardToggle === false ? '' : ' (shortcut: \\)'}`
+    if (collapsed) content.scrollTop = 0
   }
 
-  const onToggle = (): void => {
+  const onToggle = (event: MouseEvent): void => {
     setCollapsed(!collapsed)
-    toggle.blur()
+    if (event.detail > 0) toggle.blur()
   }
   const onKey = (event: KeyboardEvent): void => {
     if (
@@ -271,10 +287,20 @@ export function createProcedureControls(
   }
   // Exercise response handlers are usually installed on window. Keep keystrokes
   // used to operate a focused control from also being scored as answers.
-  const isolateControlKey = (event: KeyboardEvent): void => event.stopPropagation()
+  const isolateControlKey = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape' && !collapsed) {
+      event.preventDefault()
+      setCollapsed(true)
+      toggle.focus()
+    } else if (event.code === 'Backslash') {
+      onKey(event)
+    }
+    event.stopPropagation()
+  }
   // Once a click action has fired, return keyboard ownership to the exercise.
   // Otherwise a focused button would keep swallowing Arrow/Space responses.
   const releaseButtonFocus = (event: MouseEvent): void => {
+    if (event.detail === 0) return
     const target = event.target
     if (!(target instanceof Element)) return
     target.closest('button')?.blur()

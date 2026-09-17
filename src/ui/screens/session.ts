@@ -20,7 +20,7 @@ import {
 } from '../../core/settings'
 import { runSession } from '../../core/runner'
 import type { PlanStep, RunnerHooks, SessionControls } from '../../core/runner'
-import { PROCEDURE_REGISTRY } from '../../procedures/registry'
+import { PROCEDURE_HIT_FEEDBACK, PROCEDURE_REGISTRY } from '../../procedures/registry'
 import { getPendingSession } from '../../core/sessionState'
 import type { SessionRequest } from '../../core/sessionState'
 import { stampSessionCalibration } from './results'
@@ -97,7 +97,7 @@ export const sessionScreen: Screen = (root, nav) => {
   const pauseButton = el('button', { class: 'ghost' }, 'Pause')
   const effectsButton = el(
     'button',
-    { class: 'ghost effects-toggle', title: 'Toggle the extra chime and hit-circle effects' },
+    { class: 'ghost effects-toggle', hidden: true, title: 'Toggle the extra chime and hit-circle effects' },
     'Hit FX on',
   )
   const homeButton = el('button', { class: 'ghost' }, 'End session')
@@ -162,6 +162,7 @@ export const sessionScreen: Screen = (root, nav) => {
   const hooks: RunnerHooks = {
     onStepStart(step, index, total, c) {
       controls = c
+      effectsButton.hidden = !PROCEDURE_HIT_FEEDBACK[step.id]
       hudProcedure.textContent = step.label
       hudStep.textContent =
         total > 1
@@ -215,7 +216,7 @@ export const sessionScreen: Screen = (root, nav) => {
   if (plan.length === 0) {
     showFailure('That exercise is not available.')
   } else {
-    runSession(stage, settings, plan, PROCEDURE_REGISTRY, hooks)
+    runSession(stage, settings, plan, PROCEDURE_REGISTRY, hooks, request)
       .then((record) => {
         if (disposed) return
         // Stamp the calibration this session actually ran under, so the results

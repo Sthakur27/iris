@@ -8,8 +8,10 @@
  * overlay and record a "can't see it" the user never gave — the same class of
  * fabricated data that hidden tabs used to cause.
  *
- * Deliberately no imports: both `safety.ts` and `procedures/base.ts` depend on it.
+ * Deliberately no runtime imports: both `safety.ts` and `procedures/base.ts` depend on it.
  */
+
+import type { SessionRecord } from './types'
 
 let paused = false
 const listeners = new Set<(paused: boolean) => void>()
@@ -54,4 +56,18 @@ export function setPendingSession(request: SessionRequest): void {
 
 export function getPendingSession(): SessionRequest {
   return pending
+}
+
+/** Older records predate request persistence; infer their selection from results. */
+export function sessionRequestForReplay(record: SessionRecord): SessionRequest | null {
+  if (record.results.length === 0) return null
+  if (record.request) return record.request
+  if (record.results.length > 1) return { mode: 'plan' }
+  const result = record.results[0]!
+  const durationMs = result.plannedDurationMs ?? result.durationMs
+  return {
+    mode: 'single',
+    procedureId: result.procedure,
+    minutes: Math.max(0.5, Math.round(durationMs / 30_000) / 2),
+  }
 }

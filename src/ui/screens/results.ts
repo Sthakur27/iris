@@ -16,9 +16,8 @@
 import { el } from '../router'
 import type { Screen } from '../router'
 import { loadSessions, loadSettings } from '../../core/settings'
-import { setPendingSession } from '../../core/sessionState'
-import type { SessionRequest } from '../../core/sessionState'
-import { RED_FLAG_SYMPTOMS, redFlagAdvice } from '../../core/safety'
+import { sessionRequestForReplay, setPendingSession } from '../../core/sessionState'
+import { canStartSession, RED_FLAG_SYMPTOMS, redFlagAdvice } from '../../core/safety'
 import type { RedFlagId } from '../../core/safety'
 import {
   PROCEDURE_LABELS,
@@ -294,6 +293,7 @@ export const resultsScreen: Screen = (root, nav) => {
   let coachText: string | null = null
   let coachError: string | null = null
   let coachPending = false
+  let replayError: string | null = null
 
   /* ---------------------------------------------------------- fixed copy */
 
@@ -314,32 +314,19 @@ export const resultsScreen: Screen = (root, nav) => {
     )
   }
 
-  /** Rebuild the last request and pass through the ordinary equipment/safety preview. */
+  /** Replay immediately, retaining the calibration check used by the start button. */
   function replayLatest(): void {
-    if (!latest || latest.results.length === 0) return
-    const lastResult = latest.results[latest.results.length - 1]
-    if (!lastResult) return
-
-    if (latest.results.length === 1) {
-      const durationMs = lastResult.plannedDurationMs ?? lastResult.durationMs
-      const minutes = Math.max(0.5, Math.round(durationMs / 30_000) / 2)
-      const request: SessionRequest = {
-        mode: 'single',
-        procedureId: lastResult.procedure,
-        minutes,
-      }
-      setPendingSession(request)
-      nav.go(
-        'home',
-        { view: 'prepare', exercise: lastResult.procedure, minutes: String(minutes) },
-        'self',
-      )
+    if (!latest) return
+    const request = sessionRequestForReplay(latest)
+    if (!request) return
+    const gate = canStartSession()
+    if (!gate.allowed) {
+      replayError = gate.reason ?? 'This session cannot start right now.'
+      render()
       return
     }
-
-    const request: SessionRequest = { mode: 'plan' }
     setPendingSession(request)
-    nav.go('home', { view: 'prepare' }, 'plan')
+    nav.go('session', {}, request.mode === 'single' ? request.procedureId : 'plan')
   }
 
   function preamble(): HTMLElement {
@@ -895,6 +882,11 @@ export const resultsScreen: Screen = (root, nav) => {
 
   function render(): void {
     const children: HTMLElement[] = [header(), preamble()]
+    if (replayError) {
+      const recalibrate = el('button', {}, 'Recalibrate now')
+      recalibrate.addEventListener('click', () => nav.go('setup'))
+      children.splice(1, 0, el('div', { class: 'notice is-bad', role: 'alert' }, el('p', {}, replayError), recalibrate))
+    }
 
     if (!latest) {
       const start = el('button', { class: 'primary' }, 'Go to the home screen')

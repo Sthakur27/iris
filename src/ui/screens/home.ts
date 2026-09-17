@@ -94,7 +94,7 @@ export const homeScreen: Screen = (root, nav) => {
   // on screen. The URL is the source of truth for what is about to run.
   if (mode === 'checklist') setPendingSession(requested)
 
-  const screen = el('div', { class: 'screen' })
+  const screen = el('div', { class: 'screen home-screen' })
   root.append(screen)
 
   /* ------------------------------------------------------------------ home */
@@ -172,13 +172,13 @@ export const homeScreen: Screen = (root, nav) => {
     return el(
       'p',
       { class: 'gloss' },
-      `${today} ${today === 1 ? 'session' : 'sessions'} done today. Vision therapy responds to short ` +
-        'daily practice, so coming back tomorrow beats doing more now.',
+      `${today} ${today === 1 ? 'session' : 'sessions'} today. A little practice, every day.`,
     )
   }
 
   function tabs(): HTMLElement {
-    const row = el('div', { class: 'steps home-tabs' })
+    const row = el('div', { class: 'home-tabs' })
+    row.setAttribute('aria-label', 'Practice mode')
     row.setAttribute('role', 'tablist')
     const labels: [HomeTab, string][] = [
       ['plan', 'Structured plan'],
@@ -214,8 +214,8 @@ export const homeScreen: Screen = (root, nav) => {
   }
 
   function planCard(): HTMLElement {
-    const card = el('div', { class: 'card' })
-    card.append(el('h2', {}, "Today's plan"))
+    const card = el('div', { class: 'card home-plan-card' })
+    card.append(el('h2', {}, "Your exercise sequence"))
 
     let totalSeconds = 0
     for (const step of DAILY_PROTOCOL) {
@@ -246,9 +246,7 @@ export const homeScreen: Screen = (root, nav) => {
         el(
           'p',
           { class: 'gloss' },
-          'Jump Ductions unlocks after you have completed Convergence and Divergence at least once each. ' +
-            'It jumps between a converging and a diverging target rather than ramping smoothly, so it only ' +
-            'makes sense once you can hold each direction on its own.',
+          'Complete Convergence and Divergence to unlock Jump Ductions, which alternates between the two.',
         ),
       )
     }
@@ -257,17 +255,18 @@ export const homeScreen: Screen = (root, nav) => {
       el(
         'p',
         { class: 'gloss' },
-        `${formatMinutes(totalSeconds)} of exercises. The blocks now run directly into one another; Pause remains available whenever you need it.`,
+        `${formatMinutes(totalSeconds)} total · Exercises flow into one another. Pause whenever you need to.`,
       ),
     )
     return card
   }
 
   function startCard(): HTMLElement {
-    const card = el('div', { class: 'card' })
+    const card = el('div', { class: 'card home-start-card' })
 
     card.append(
-      el('h2', {}, 'Start a session'),
+      el('span', { class: 'home-eyebrow' }, 'Daily practice'),
+      el('h2', {}, 'A little focus.\nA daily rhythm.'),
       el(
         'p',
         {},
@@ -278,7 +277,7 @@ export const homeScreen: Screen = (root, nav) => {
 
     card.append(...gateNotices())
 
-    const start = el('button', { class: 'primary big-start' }, 'Start the full plan')
+    const start = el('button', { class: 'primary big-start' }, 'Start today’s plan  →')
     start.addEventListener('click', () => beginWith({ mode: 'plan' }))
     card.append(start)
 
@@ -295,19 +294,17 @@ export const homeScreen: Screen = (root, nav) => {
    * to a third of prescribed sessions actually get done. Five minutes of one exercise
    * beats the nothing that a 27-minute ask often turns into.
    *
-   * The rows deliberately mirror the plan list, down to the `.plan-row` markup, so
-   * that this reads as the same programme taken one piece at a time rather than as a
-   * different feature.
+   * Exercise tiles keep the name and duration together, with a generous labeled
+   * play target that remains easy to reach on a narrow screen.
    */
   function selfGuidedCard(): HTMLElement {
-    const card = el('div', { class: 'card' })
+    const card = el('div', { class: 'card home-exercises-card' })
     card.append(
-      el('h2', {}, 'One exercise, now'),
+      el('h2', {}, 'Choose your exercise'),
       el(
         'p',
         {},
-        'Press play and that exercise runs for the length the programme prescribes for it — the same number ' +
-          'the Structured plan tab shows. It is recorded exactly like a full session.',
+        'Make time for one exercise. Each uses its prescribed duration and saves to your results.',
       ),
     )
 
@@ -332,33 +329,46 @@ export const homeScreen: Screen = (root, nav) => {
         'label',
         { class: 'half-toggle' },
         halfBox,
-        el('span', {}, 'Half length — shorter than prescribed, but far better than skipping it'),
+        el('span', {}, 'Half-length session'),
+        el('span', { class: 'half-toggle-note' }, 'For a shorter practice'),
       ),
     )
 
+    const exercises = el('div', { class: 'home-exercise-grid' })
     for (const step of availableProcedures()) {
       const dur = el('div', { class: 'dur' })
       durationCells.push({ cell: dur, seconds: step.seconds })
 
-      const play = el('button', { class: 'row-play' }, '▶')
-      play.setAttribute('aria-label', `Start ${step.label}`)
+      const play = el(
+        'button',
+        { class: 'row-play' },
+        el('span', { ariaHidden: 'true', class: 'row-play-icon' }, '▶'),
+        el('span', {}, 'Play'),
+      )
+      play.setAttribute('aria-label', `Play ${step.label}`)
       play.title = `Start ${step.label} on its own`
       play.addEventListener('click', () => {
         const seconds = selfGuidedHalf ? step.seconds / 2 : step.seconds
         beginWith({ mode: 'single', procedureId: step.id, minutes: seconds / 60 })
       })
 
-      card.append(el('div', { class: 'plan-row' }, el('div', { class: 'name' }, step.label), dur, play))
+      exercises.append(
+        el(
+          'div',
+          { class: 'plan-row home-exercise' },
+          el('div', { class: 'home-exercise-info' }, el('div', { class: 'name' }, step.label), dur),
+          play,
+        ),
+      )
     }
     paintDurations()
+    card.append(exercises)
 
     card.append(
       el(
         'p',
         { class: 'gloss' },
-        'This is not quite the same treatment: the structured plan rotates the exercises on purpose, and ' +
-          'rotating them works better than repeating one. It is here for the days the full plan would not ' +
-          'happen at all.',
+        'The structured plan is recommended: it rotates exercises for a more complete practice.',
       ),
     )
 
@@ -367,8 +377,7 @@ export const homeScreen: Screen = (root, nav) => {
         el(
           'p',
           { class: 'gloss' },
-          'Jump Ductions is not in this list yet — it appears once you have completed Convergence and ' +
-            'Divergence at least once each, for the reason given on the Structured plan tab.',
+          'Jump Ductions appears after you complete Convergence and Divergence.',
         ),
       )
     }
@@ -379,8 +388,8 @@ export const homeScreen: Screen = (root, nav) => {
 
   function historyCard(): HTMLElement {
     const sessions = loadSessions()
-    const card = el('div', { class: 'card' })
-    card.append(el('h2', {}, `Last ${STRIP_DAYS} days`))
+    const card = el('div', { class: 'card home-history-card' })
+    card.append(el('h2', {}, 'Your practice, lately'))
 
     const strip = el('div', { class: 'day-strip' })
     const today = new Date()
@@ -406,9 +415,7 @@ export const homeScreen: Screen = (root, nav) => {
       el(
         'p',
         { class: 'gloss' },
-        `${daysWithSession} of the last ${STRIP_DAYS} days had a session. This is here as a fact about ` +
-          'frequency, not a score: vision therapy responds to short daily practice, so a missed day is a ' +
-          'missed day and nothing more.',
+        `${daysWithSession} days of practice in the last ${STRIP_DAYS} days. Every return counts.`,
       ),
     )
     return card
@@ -638,7 +645,12 @@ export const homeScreen: Screen = (root, nav) => {
     return el(
       'div',
       { class: 'head' },
-      el('h1', {}, 'Iris'),
+      el(
+        'div',
+        { class: 'home-brand' },
+        el('span', { class: 'home-brand-mark', ariaHidden: 'true' }),
+        el('h1', {}, 'Iris'),
+      ),
       el('div', { class: 'actions' }, resultsButton, settingsButton),
     )
   }
@@ -654,19 +666,27 @@ export const homeScreen: Screen = (root, nav) => {
 
     children.push(
       el(
-        'p',
-        {},
-        'Practice software for a home vision therapy programme, not a diagnosis. It cannot measure your ' +
-          'eyes; it can only give you a consistent exercise and an honest record of how it went. Anything ' +
-          'that feels clinically wrong belongs in front of an optometrist, not in this app.',
+        'div',
+        { class: 'home-intro' },
+        el('span', { class: 'home-eyebrow' }, 'Your space to practice'),
+        el('h2', {}, 'Make room for your vision.'),
+        el('p', {}, 'Follow your daily plan or settle into a single exercise.'),
       ),
       tabs(),
     )
 
-    if (tab === 'plan') children.push(planCard(), startCard())
+    if (tab === 'plan') children.push(el('div', { class: 'home-plan-layout' }, startCard(), planCard()))
     else children.push(selfGuidedCard())
 
-    children.push(historyCard())
+    children.push(
+      historyCard(),
+      el(
+        'p',
+        { class: 'home-disclaimer' },
+        'Practice software for your home vision therapy programme, not a diagnosis. Iris cannot measure your eyes. ' +
+        'If anything feels clinically wrong, speak with your optometrist.',
+      ),
+    )
     screen.replaceChildren(...children)
   }
 

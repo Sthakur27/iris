@@ -1,3 +1,5 @@
+import type { SessionRequest } from './sessionState'
+
 export type EyeSide = 'left' | 'right'
 
 export type ProcedureId =
@@ -150,6 +152,8 @@ export interface ProcedureResult {
 export interface SessionRecord {
   id: string
   startedAt: number
+  /** Original selection, including interrupted plans and intended single-exercise duration. */
+  request?: SessionRequest
   results: ProcedureResult[]
   /** The user ended the session before the plan finished. */
   endedEarly?: boolean
