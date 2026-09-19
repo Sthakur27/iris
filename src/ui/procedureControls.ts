@@ -20,6 +20,8 @@ export interface ProcedureControlsOptions {
   prompt?: HTMLElement
   collapsed?: boolean
   className?: string
+  /** Prefer a side panel on wide screens for compact, central targets. */
+  placement?: 'bottom' | 'side'
   /** Set false when an exercise needs to own the backslash key itself. */
   keyboardToggle?: boolean
 }
@@ -140,6 +142,7 @@ export function createProcedureControls(
     toggle,
     content,
   )
+  if (options.placement === 'side') node.classList.add('procedure-controls-side')
   node.dataset.exerciseControls = ''
   toggle.setAttribute('aria-controls', panelId)
   if (options.keyboardToggle !== false) toggle.setAttribute('aria-keyshortcuts', '\\')

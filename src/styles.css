@@ -935,3 +935,85 @@ label {
   }
   .number-search-field { top: 76px; }
 }
+
+/* Compact central targets can opt into a vertical panel on wide screens. */
+.rings-stage .stage-prompt {
+  transition: none;
+}
+
+.rings-controls .procedure-preset-slot,
+.rings-controls .procedure-preset-save,
+.rings-controls .rings-auto,
+.rings-controls input[type='range'] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (min-width: 1000px) {
+  .procedure-controls.procedure-controls-side {
+    left: auto;
+    right: max(16px, env(safe-area-inset-right));
+    top: 140px;
+    bottom: auto;
+    transform: none;
+    width: 320px;
+  }
+
+  .procedure-controls.procedure-controls-side.is-collapsed {
+    width: auto;
+  }
+
+  .procedure-controls-side.rings-controls .procedure-controls-content {
+    grid-template-columns: 1fr;
+    max-height: calc(100dvh - 220px);
+  }
+
+  .procedure-controls-side.rings-controls .cinema-control {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px;
+  }
+
+  .procedure-controls-side.rings-controls input[type='range'] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .procedure-controls-side.rings-controls .cinema-control-value {
+    grid-column: 2;
+    grid-row: 1;
+    white-space: normal;
+    max-width: 140px;
+  }
+
+  .rings-stage .stage-prompt.procedure-controls-prompt {
+    bottom: 24px;
+    right: 356px;
+  }
+
+  .rings-stage .stage-prompt.controls-collapsed {
+    right: 0;
+  }
+}
+
+@media (max-width: 999px) {
+  .rings-controls.procedure-controls .procedure-controls-content {
+    max-height: min(34dvh, calc(100dvh - 350px));
+  }
+}
+
+.rings-controls .procedure-presets {
+  order: 1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(44px, 1fr));
+}
+
+.rings-controls .procedure-presets-label,
+.rings-controls .procedure-preset-save,
+.rings-controls .procedure-presets-help,
+.rings-controls .procedure-presets-status {
+  grid-column: 1 / -1;
+}
+
+.rings-controls .procedure-preset-slot {
+  width: 100%;
+}

@@ -9,6 +9,7 @@ import {
 import { isTherapyPaused } from '../core/sessionState'
 import { el } from '../ui/router'
 import {
+  controlRow,
   createAutoRangeControl,
   createProcedureControls,
   presetInput,
@@ -30,7 +31,7 @@ export const depthRings: Procedure = {
   async run(ctx: ProcedureContext): Promise<void> {
     const { settings, signal } = ctx
     const divergenceLimit = depthCinemaDivergenceLimit(settings.calibration.viewingDistanceCm)
-    const stage = el('div', { class: 'stage cinema-stage' })
+    const stage = el('div', { class: 'stage cinema-stage rings-stage' })
     const canvas = el('canvas')
 
     const hud = el('div', { class: 'stage-hud' })
@@ -42,7 +43,7 @@ export const depthRings: Procedure = {
     const prompt = el(
       'div',
       { class: 'stage-prompt cinema-prompt' },
-      'Keep all six rings single. Set either slider by hand, or start its slow automatic sweep and let it reverse at each end.',
+      'Keep all six rings single. Adjust size and depth in settings.',
     )
 
     const depthInput = rangeInput(
@@ -53,6 +54,8 @@ export const depthRings: Procedure = {
       'Whole stack depth; divergence to the left and convergence to the right',
     )
     const spreadInput = rangeInput(0, 12, 0.1, INITIAL_SPREAD_PD, 'Depth spread between rings')
+    const sizeInput = rangeInput(25, 125, 5, 100, 'Apparatus size')
+    const sizeValue = el('span', { class: 'cinema-control-value' })
     const depthValue = el('span', { class: 'cinema-control-value' })
     const spreadValue = el('span', { class: 'cinema-control-value' })
     const depthAuto = createAutoRangeControl({
@@ -90,7 +93,8 @@ export const depthRings: Procedure = {
         spreadInput,
         spreadValue,
       ),
-    ], { id: 'depth-rings', prompt, collapsed: true, className: 'rings-controls' })
+      controlRow('Apparatus size', sizeInput, sizeValue),
+    ], { id: 'depth-rings', prompt, collapsed: true, className: 'rings-controls', placement: 'side' })
     stage.append(canvas, hud, prompt, controls.node)
     ctx.root.append(stage)
 
@@ -113,7 +117,18 @@ export const depthRings: Procedure = {
         settings.calibration.pxPerCm,
         settings.calibration.viewingDistanceCm,
         settings.calibration.redEye,
+        Number(sizeInput.value) / 100,
+        {
+          // Keep the drawing clear of the HUD, prompt, and expanded settings.
+          top: window.innerWidth <= 620 ? 172 : 132,
+          right: !controls.isCollapsed() && window.innerWidth >= 1000
+            ? controls.node.getBoundingClientRect().left - 20
+            : width - 16,
+          bottom: prompt.getBoundingClientRect().top - 16,
+        },
       )
+      sizeValue.textContent = `${sizeInput.value}%`
+      sizeInput.setAttribute('aria-valuetext', `${sizeInput.value} percent`)
       depthValue.textContent = formatSignedDepth(stackDepthPd)
       // Keep the control readout anchored to what the slider requests. The HUD
       // already reports the effective ring range when stack depth constrains it;
@@ -168,7 +183,13 @@ export const depthRings: Procedure = {
     controls.presets.register(
       presetInput('stack-depth', 'Stack depth', depthInput, update),
       presetInput('ring-spread', 'Ring spread', spreadInput, update),
+      presetInput('apparatus-size', 'Apparatus size', sizeInput, update),
     )
+
+    sizeInput.addEventListener('input', update)
+    const layoutObserver = new ResizeObserver(() => render())
+    layoutObserver.observe(controls.node)
+    layoutObserver.observe(prompt)
 
     window.addEventListener('keydown', onKey)
     window.addEventListener('resize', resize)
@@ -187,6 +208,8 @@ export const depthRings: Procedure = {
         else signal.addEventListener('abort', () => resolve(), { once: true })
       })
     } finally {
+      layoutObserver.disconnect()
+      sizeInput.removeEventListener('input', update)
       cancelAnimationFrame(clockRaf)
       depthAuto.dispose()
       spreadAuto.dispose()
@@ -220,6 +243,8 @@ function drawRings(
   pxPerCm: number,
   viewingDistanceCm: number,
   redEye: EyeSide,
+  scale: number,
+  area: { top: number; right: number; bottom: number },
 ): void {
   const g = canvas.getContext('2d')
   if (!g) return
@@ -231,16 +256,22 @@ function drawRings(
   // Fill the stage while preserving a small, distant centre. Radius follows the
   // ring's position in the stack, adding a congruent perspective cue without
   // changing the calibrated red/blue disparity that sets vergence demand.
-  const minDimension = Math.min(w, h)
-  const innerRadius = Math.max(18, minDimension * 0.035)
-  const outerRadius = Math.max(62, minDimension * 0.36)
+  const availableWidth = Math.max(0, area.right - 16)
+  const availableHeight = Math.max(0, area.bottom - area.top)
+  const minDimension = Math.min(availableWidth, availableHeight)
+  const disparity = Math.abs(prismDioptresToPx(stackDepthPd, { pxPerCm, viewingDistanceCm, redEye }))
+  const radiusLimit = Math.max(0, Math.min((availableWidth - disparity) / 2 - 4, availableHeight / 2 - 4))
+  const outerRadius = Math.min(minDimension * 0.44 * scale, radiusLimit)
+  const innerRadius = outerRadius * (0.035 / 0.36)
+  const centerX = 16 + availableWidth / 2
+  const centerY = area.top + availableHeight / 2
   g.save()
   g.globalCompositeOperation = 'lighter'
   for (const eye of ['left', 'right'] as const) {
     const colour = eye === redEye ? RED : BLUE
     const eyeSign = eye === 'left' ? 1 : -1
     g.strokeStyle = colour
-    g.lineWidth = 1.5
+    g.lineWidth = 1.5 * scale
     g.globalAlpha = 0.84
     for (let i = 0; i < RING_COUNT; i++) {
       const fraction = i / (RING_COUNT - 1)
@@ -252,8 +283,8 @@ function drawRings(
       const disparityPx = prismDioptresToPx(demandPd, { pxPerCm, viewingDistanceCm, redEye })
       g.beginPath()
       g.arc(
-        w / 2 + eyeSign * disparityPx * 0.5,
-        h / 2,
+        centerX + eyeSign * disparityPx * 0.5,
+        centerY,
         innerRadius + fraction * (outerRadius - innerRadius),
         0,
         Math.PI * 2,

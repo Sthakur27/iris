@@ -54,7 +54,7 @@ with a half-length option for shorter sessions. In addition to the plan exercise
 | Number Search | 5 minutes | Find scattered digits while practicing with flippers |
 | Cyclopean Letters | 5 minutes | Identify letters in a binocular random-dot target |
 | Depth Cinema | 7 minutes | Animated depth scene with adjustable vergence and motion |
-| Depth Rings | 7 minutes | Concentric rings with adjustable stack depth and spread |
+| Depth Rings | 7 minutes | Concentric rings with adjustable size, stack depth, and spread |
 | Depth Spiral | 7 minutes | Lettered square-spiral fusion target |
 | Depth Helix | 7 minutes | Binocular helix with rotation and depth controls |
 
@@ -76,6 +76,21 @@ structured plan. The home screen also shows your practice history over the last 
 Exercise-specific response keys and controls are explained in the preview and on-screen prompts.
 Sessions do not enforce a daily cap or scheduled breaks. After two sessions in a day, Iris shows
 an advisory; you can pause whenever you need a break.
+
+## Depth Rings
+
+Choose **Self-guided → Depth Rings** for seven minutes of concentric-ring practice with
+red/blue anaglyph glasses (red lens over your right eye). Open the gear to adjust whole-stack
+depth, depth spread, and **Apparatus size** (25–125%, default 100%) without resizing the browser.
+Size scales all six rings and their strokes while preserving calibrated red/blue separation;
+the apparatus fits the space available, so enlargement is limited near the stage edges.
+The panel sits on the right on wide screens and along the bottom on smaller screens, with
+space reserved for the target above it. Close settings for more drawing space.
+
+Stack depth and spread each support a slow automatic sweep that reverses at the endpoints.
+Use Left/Right arrows for stack depth and `;` / `'` for spread when settings are not focused.
+Saved presets include apparatus size; older presets remain usable. Pause and End session
+remain available throughout.
 
 ## Number Search
 
@@ -144,6 +159,8 @@ requesting optional coaching sends the analysis summary to the configured Anthro
 
 ## Project notes
 
+- [Origin and motivation](docs/ORIGIN-AND-MOTIVATION.md) — Sid's personal history,
+  the depth exercises, and why Iris is being developed
 - [Failure modes](docs/FAILURE-MODES.md) — risks and integrity checks
 - [Research](docs/RESEARCH.md) — background sources and rationale
 - [Ideas](docs/IDEAS.md) — product exploration
